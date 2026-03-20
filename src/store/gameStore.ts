@@ -523,15 +523,24 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   assignResearcher: (pipelineId, researcherId) => {
     const state = get();
+    // 다른 파이프라인에서 해당 연구원을 먼저 해제 (1명은 1곳에만 배정)
     set({
-      pipelines: state.pipelines.map((p) =>
-        p.id === pipelineId
-          ? {
-              ...p,
-              assignedResearchers: [...p.assignedResearchers, researcherId],
-            }
-          : p
-      ),
+      pipelines: state.pipelines.map((p) => {
+        if (p.id === pipelineId) {
+          return {
+            ...p,
+            assignedResearchers: p.assignedResearchers.includes(researcherId)
+              ? p.assignedResearchers
+              : [...p.assignedResearchers, researcherId],
+          };
+        }
+        return {
+          ...p,
+          assignedResearchers: p.assignedResearchers.filter(
+            (id) => id !== researcherId
+          ),
+        };
+      }),
     });
   },
 

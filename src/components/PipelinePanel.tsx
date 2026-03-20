@@ -243,13 +243,13 @@ export default function PipelinePanel() {
                                             : "border-card-border text-foreground/50 hover:border-accent hover:text-accent"
                                         }`}
                                     >
-                                      + {r.name}
+                                      {isElsewhere ? "↪" : "+"} {r.name}
                                       <span className="opacity-50">
                                         ({grade.label})
                                       </span>
                                       {isElsewhere && (
                                         <span className="text-warning/40 text-[10px]">
-                                          타 배정
+                                          다른 곳에서 이동
                                         </span>
                                       )}
                                     </button>
