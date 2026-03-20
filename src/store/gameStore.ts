@@ -74,6 +74,9 @@ interface GameState {
   // 상장폐지 경고 카운터
   delistingWarningTurns: number;
 
+  // 자본금 음수 유지 카운터 (36턴 시 파산)
+  negativeCashTurns: number;
+
   // 게임 로그
   logs: GameLog[];
 
@@ -148,6 +151,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   approvedDrugs: 0,
   equityOfferingCooldown: 0,
   delistingWarningTurns: 0,
+  negativeCashTurns: 0,
   logs: [],
 
   startGame: (difficulty) => {
@@ -167,6 +171,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       approvedDrugs: 0,
       equityOfferingCooldown: 0,
       delistingWarningTurns: 0,
+      negativeCashTurns: 0,
       logs: [
         {
           turn: 1,
@@ -189,6 +194,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     let newApproved = state.approvedDrugs;
     let newPipelines = [...state.pipelines];
     const newResearchers = [...state.researchers];
+    let newNegativeCashTurns = state.negativeCashTurns;
     let newDelistingWarning = state.delistingWarningTurns;
     let newCooldown = Math.max(0, state.equityOfferingCooldown - 1);
 
@@ -371,23 +377,40 @@ export const useGameStore = create<GameState>((set, get) => ({
       newDelistingWarning = 0;
     }
 
-    // 7. 파산 체크
-    if (newCash <= 0 && newPipelines.length === 0) {
-      set({
-        ...state,
-        phase: "gameover",
-        cash: newCash,
-        turn: newTurn,
-        logs: [
-          ...state.logs,
-          {
-            turn: newTurn,
-            message: "자본금이 고갈되어 파산했습니다.",
-            type: "danger",
-          },
-        ],
-      });
-      return;
+    // 7. 파산 체크 (자본금 음수 36턴 유지 시 게임오버)
+    if (newCash < 0) {
+      newNegativeCashTurns++;
+      if (newNegativeCashTurns >= 36) {
+        set({
+          ...state,
+          phase: "gameover",
+          cash: newCash,
+          turn: newTurn,
+          negativeCashTurns: newNegativeCashTurns,
+          logs: [
+            ...state.logs,
+            ...newLogs,
+            {
+              turn: newTurn,
+              message: "자본금 적자가 36개월 지속되어 파산했습니다.",
+              type: "danger",
+            },
+          ],
+        });
+        return;
+      } else if (newNegativeCashTurns === 1) {
+        notify("자본금이 마이너스입니다! 36턴 내 흑자 전환하지 못하면 파산합니다.", "danger");
+        newLogs.push({
+          turn: newTurn,
+          message: `⚠️ 자본금 적자 시작! 파산까지 35턴 남음`,
+          type: "warning",
+        });
+      } else if (newNegativeCashTurns % 6 === 0) {
+        const remaining = 36 - newNegativeCashTurns;
+        notify(`자본금 적자 ${newNegativeCashTurns}턴째! 파산까지 ${remaining}턴 남았습니다.`, "warning");
+      }
+    } else {
+      newNegativeCashTurns = 0;
     }
 
     // 8. 승리 체크
@@ -441,6 +464,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       approvedDrugs: newApproved,
       equityOfferingCooldown: newCooldown,
       delistingWarningTurns: newDelistingWarning,
+      negativeCashTurns: newNegativeCashTurns,
       logs: [...state.logs, ...newLogs],
     });
   },
@@ -648,6 +672,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       approvedDrugs: 0,
       equityOfferingCooldown: 0,
       delistingWarningTurns: 0,
+      negativeCashTurns: 0,
       logs: [],
     });
   },

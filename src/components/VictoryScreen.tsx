@@ -9,6 +9,7 @@ interface VictoryScreenProps {
 
 export default function VictoryScreen({ onRestart }: VictoryScreenProps) {
   const turn = useGameStore((s) => s.turn);
+  const cash = useGameStore((s) => s.cash);
   const marketCap = useGameStore((s) => s.marketCap);
   const approvedDrugs = useGameStore((s) => s.approvedDrugs);
   const difficulty = useGameStore((s) => s.difficulty);
@@ -32,6 +33,12 @@ export default function VictoryScreen({ onRestart }: VictoryScreenProps) {
           {turn}턴 만에 승리했습니다! ({difficulty.toUpperCase()})
         </p>
         <div className="flex gap-8 justify-center mb-12 text-sm text-foreground/40">
+          <div>
+            <p className="text-accent text-lg font-bold">
+              {cash.toLocaleString()}억
+            </p>
+            <p>최종 자본금</p>
+          </div>
           <div>
             <p className="text-accent text-lg font-bold">
               {marketCap.toLocaleString()}억

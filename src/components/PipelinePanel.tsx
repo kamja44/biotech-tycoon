@@ -186,15 +186,24 @@ export default function PipelinePanel() {
                               );
                               if (!r) return null;
                               const grade = RESEARCHER_GRADES[r.grade];
+                              const specialty = DISEASE_CATEGORIES[r.specialty];
+                              const isMatch = r.specialty === pipeline.diseaseCategory;
                               return (
                                 <span
                                   key={rId}
-                                  className="inline-flex items-center gap-1 text-xs bg-accent/15 text-accent
-                                    border border-accent/30 rounded-md px-2 py-1"
+                                  className={`inline-flex items-center gap-1 text-xs border rounded-md px-2 py-1 ${
+                                    isMatch
+                                      ? "bg-accent/25 text-accent border-accent/50"
+                                      : "bg-accent/15 text-accent border-accent/30"
+                                  }`}
                                 >
                                   {r.name}
                                   <span className="text-accent/50">
-                                    ({grade.label})
+                                    {grade.label}
+                                  </span>
+                                  <span className={isMatch ? "text-accent" : "text-accent/40"}>
+                                    · {specialty.label.split(" ")[0]}
+                                    {isMatch && " ★"}
                                   </span>
                                   <button
                                     onClick={(e) => {
@@ -230,6 +239,8 @@ export default function PipelinePanel() {
                                 )
                                 .map((r) => {
                                   const grade = RESEARCHER_GRADES[r.grade];
+                                  const specialty = DISEASE_CATEGORIES[r.specialty];
+                                  const isMatch = r.specialty === pipeline.diseaseCategory;
                                   const isElsewhere = assignedElsewhere.has(
                                     r.id
                                   );
@@ -244,12 +255,15 @@ export default function PipelinePanel() {
                                         border transition-colors cursor-pointer ${
                                           isElsewhere
                                             ? "border-warning/30 text-warning/60 hover:border-warning hover:text-warning"
-                                            : "border-card-border text-foreground/50 hover:border-accent hover:text-accent"
+                                            : isMatch
+                                              ? "border-accent/40 text-accent/70 hover:border-accent hover:text-accent"
+                                              : "border-card-border text-foreground/50 hover:border-accent hover:text-accent"
                                         }`}
                                     >
                                       {isElsewhere ? "↪" : "+"} {r.name}
                                       <span className="opacity-50">
-                                        ({grade.label})
+                                        {grade.label} · {specialty.label.split(" ")[0]}
+                                        {isMatch && " ★"}
                                       </span>
                                       {isElsewhere && (
                                         <span className="text-warning/40 text-[10px]">

@@ -9,6 +9,7 @@ interface GameOverScreenProps {
 
 export default function GameOverScreen({ onRestart }: GameOverScreenProps) {
   const turn = useGameStore((s) => s.turn);
+  const cash = useGameStore((s) => s.cash);
   const marketCap = useGameStore((s) => s.marketCap);
   const approvedDrugs = useGameStore((s) => s.approvedDrugs);
 
@@ -27,6 +28,12 @@ export default function GameOverScreen({ onRestart }: GameOverScreenProps) {
           {turn}턴 동안 버텼습니다
         </p>
         <div className="flex gap-8 justify-center mb-12 text-sm text-foreground/40">
+          <div>
+            <p className="text-foreground/60 text-lg font-bold">
+              {cash.toLocaleString()}억
+            </p>
+            <p>최종 자본금</p>
+          </div>
           <div>
             <p className="text-foreground/60 text-lg font-bold">
               {marketCap.toLocaleString()}억
