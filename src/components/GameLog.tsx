@@ -9,11 +9,14 @@ import { useGameStore } from "@/store/gameStore";
  */
 export default function GameLog() {
   const logs = useGameStore((s) => s.logs);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
-  // 새 로그 추가 시 자동 스크롤
+  // 새 로그 추가 시 로그 컨테이너 내부만 스크롤
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = containerRef.current;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [logs.length]);
 
   const typeColors = {
@@ -26,14 +29,13 @@ export default function GameLog() {
   return (
     <div className="bg-card-bg border border-card-border rounded-xl p-4">
       <h3 className="text-sm font-bold text-foreground/60 mb-3">이벤트 로그</h3>
-      <div className="h-48 overflow-y-auto space-y-1 text-xs font-mono">
+      <div ref={containerRef} className="h-48 overflow-y-auto space-y-1 text-xs font-mono">
         {logs.map((log, i) => (
           <div key={i} className={typeColors[log.type]}>
             <span className="text-foreground/30 mr-2">[{log.turn}턴]</span>
             {log.message}
           </div>
         ))}
-        <div ref={bottomRef} />
       </div>
     </div>
   );

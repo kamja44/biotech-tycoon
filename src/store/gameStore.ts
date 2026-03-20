@@ -475,7 +475,9 @@ export const useGameStore = create<GameState>((set, get) => ({
     const salary = RESEARCHER_GRADES[researcher.grade].salary;
     // 고용 시 3개월치 계약금 × 난이도 배율
     const hiringCost = Math.round(salary * 3 * diffConfig.hiringCostMultiplier * 10) / 10;
-    if (state.cash < hiringCost) return;
+    // 적자여도 고용 가능 (36턴 파산 규칙)
+    // 단, 고용 후 잔액이 현재 자본금 - 비용
+
 
     const newResearcher: Researcher = {
       ...researcher,
@@ -529,7 +531,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const firstPhase = CLINICAL_PHASES.preclinical;
     const cost = firstPhase.cost * diseaseConfig.costMultiplier * diffConfig.clinicalCostMultiplier;
 
-    if (state.cash < cost) return;
+    // 적자여도 파이프라인 개시 가능 (36턴 파산 규칙)
 
     const { speedBonus } = getResearcherBonus(
       state.researchers,
