@@ -178,6 +178,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   nextTurn: () => {
     const state = get();
+    const diffConfig = DIFFICULTY_CONFIG[state.difficulty];
     const newTurn = state.turn + 1;
     const newLogs: GameLog[] = [];
     let newCash = state.cash;
@@ -245,7 +246,8 @@ export const useGameStore = create<GameState>((set, get) => ({
           0.95,
           phaseConfig.baseSuccessRate *
             diseaseConfig.successRateMultiplier +
-            successBonus
+            successBonus +
+            diffConfig.successRateBonus
         );
 
         const roll = Math.random();
@@ -290,18 +292,20 @@ export const useGameStore = create<GameState>((set, get) => ({
               1,
               nextConfig.turns - speedBonus
             );
-            newCash -= nextConfig.cost * diseaseConfig.costMultiplier;
+            const phaseCost = nextConfig.cost * diseaseConfig.costMultiplier * diffConfig.clinicalCostMultiplier;
+            newCash -= phaseCost;
             newLogs.push({
               turn: newTurn,
-              message: `✅ [${pipeline.name}] ${phaseConfig.label} 성공! → ${nextConfig.label} 진입 (비용: ${(nextConfig.cost * diseaseConfig.costMultiplier).toFixed(0)}억)`,
+              message: `✅ [${pipeline.name}] ${phaseConfig.label} 성공! → ${nextConfig.label} 진입 (비용: ${phaseCost.toFixed(0)}억)`,
               type: "success",
             });
           }
         } else {
           // 실패
-          const stockImpact = phaseConfig.failureStockImpact;
+          const stockImpact = phaseConfig.failureStockImpact * diffConfig.failureImpactMultiplier;
           newStockPrice = Math.round(newStockPrice * (1 + stockImpact));
-          newTrust = Math.max(0, newTrust - 10);
+          const trustLoss = Math.round(10 * diffConfig.trustLossMultiplier);
+          newTrust = Math.max(0, newTrust - trustLoss);
           failedPipelines.push(pipeline.id);
           newLogs.push({
             turn: newTurn,
@@ -433,9 +437,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   hireResearcher: (researcher) => {
     const state = get();
+    const diffConfig = DIFFICULTY_CONFIG[state.difficulty];
     const salary = RESEARCHER_GRADES[researcher.grade].salary;
-    // 고용 시 3개월치 계약금
-    const hiringCost = salary * 3;
+    // 고용 시 3개월치 계약금 × 난이도 배율
+    const hiringCost = Math.round(salary * 3 * diffConfig.hiringCostMultiplier * 10) / 10;
     if (state.cash < hiringCost) return;
 
     const newResearcher: Researcher = {
@@ -485,9 +490,10 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   startPipeline: (name, diseaseCategory, researcherIds) => {
     const state = get();
+    const diffConfig = DIFFICULTY_CONFIG[state.difficulty];
     const diseaseConfig = DISEASE_CATEGORIES[diseaseCategory];
     const firstPhase = CLINICAL_PHASES.preclinical;
-    const cost = firstPhase.cost * diseaseConfig.costMultiplier;
+    const cost = firstPhase.cost * diseaseConfig.costMultiplier * diffConfig.clinicalCostMultiplier;
 
     if (state.cash < cost) return;
 

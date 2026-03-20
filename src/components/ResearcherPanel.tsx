@@ -6,6 +6,7 @@ import { useGameStore } from "@/store/gameStore";
 import {
   RESEARCHER_GRADES,
   DISEASE_CATEGORIES,
+  DIFFICULTY_CONFIG,
   ResearcherGrade,
   DiseaseCategory,
 } from "@/data/gameConfig";
@@ -36,6 +37,7 @@ const NAMES = [
 export default function ResearcherPanel() {
   const researchers = useGameStore((s) => s.researchers);
   const cash = useGameStore((s) => s.cash);
+  const difficulty = useGameStore((s) => s.difficulty);
   const hireResearcher = useGameStore((s) => s.hireResearcher);
   const fireResearcher = useGameStore((s) => s.fireResearcher);
 
@@ -44,8 +46,9 @@ export default function ResearcherPanel() {
   const [hireSpecialty, setHireSpecialty] =
     useState<DiseaseCategory>("common");
 
+  const diffConfig = DIFFICULTY_CONFIG[difficulty];
   const gradeConfig = RESEARCHER_GRADES[hireGrade];
-  const hiringCost = gradeConfig.salary * 3;
+  const hiringCost = Math.round(gradeConfig.salary * 3 * diffConfig.hiringCostMultiplier * 10) / 10;
 
   const handleHire = () => {
     const usedNames = new Set(researchers.map((r) => r.name));

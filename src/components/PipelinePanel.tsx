@@ -6,6 +6,7 @@ import { useGameStore } from "@/store/gameStore";
 import {
   CLINICAL_PHASES,
   DISEASE_CATEGORIES,
+  DIFFICULTY_CONFIG,
   RESEARCHER_GRADES,
   DiseaseCategory,
 } from "@/data/gameConfig";
@@ -19,6 +20,7 @@ export default function PipelinePanel() {
   const pipelines = useGameStore((s) => s.pipelines);
   const researchers = useGameStore((s) => s.researchers);
   const cash = useGameStore((s) => s.cash);
+  const difficulty = useGameStore((s) => s.difficulty);
   const startPipeline = useGameStore((s) => s.startPipeline);
   const assignResearcher = useGameStore((s) => s.assignResearcher);
   const unassignResearcher = useGameStore((s) => s.unassignResearcher);
@@ -63,9 +65,11 @@ export default function PipelinePanel() {
     return assigned;
   };
 
+  const diffConfig = DIFFICULTY_CONFIG[difficulty];
   const estimatedCost =
     CLINICAL_PHASES.preclinical.cost *
-    DISEASE_CATEGORIES[newCategory].costMultiplier;
+    DISEASE_CATEGORIES[newCategory].costMultiplier *
+    diffConfig.clinicalCostMultiplier;
 
   return (
     <div className="bg-card-bg border border-card-border rounded-xl p-4">
