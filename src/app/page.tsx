@@ -4,6 +4,7 @@ import TitleScreen from "@/components/TitleScreen";
 import Dashboard from "@/components/Dashboard";
 import GameOverScreen from "@/components/GameOverScreen";
 import VictoryScreen from "@/components/VictoryScreen";
+import NotificationToast from "@/components/NotificationToast";
 import { useGameStore } from "@/store/gameStore";
 
 export default function Home() {
@@ -11,17 +12,13 @@ export default function Home() {
   const startGame = useGameStore((s) => s.startGame);
   const resetGame = useGameStore((s) => s.resetGame);
 
-  if (phase === "title") {
-    return <TitleScreen onStart={startGame} />;
-  }
-
-  if (phase === "gameover") {
-    return <GameOverScreen onRestart={resetGame} />;
-  }
-
-  if (phase === "victory") {
-    return <VictoryScreen onRestart={resetGame} />;
-  }
-
-  return <Dashboard />;
+  return (
+    <>
+      <NotificationToast />
+      {phase === "title" && <TitleScreen onStart={startGame} />}
+      {phase === "gameover" && <GameOverScreen onRestart={resetGame} />}
+      {phase === "victory" && <VictoryScreen onRestart={resetGame} />}
+      {phase === "playing" && <Dashboard />}
+    </>
+  );
 }

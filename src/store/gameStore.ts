@@ -10,6 +10,7 @@ import {
   RESEARCHER_GRADES,
   getNextPhase,
 } from "@/data/gameConfig";
+import { useNotificationStore } from "./notificationStore";
 
 /** 연구원 */
 export interface Researcher {
@@ -179,6 +180,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   nextTurn: () => {
     const state = get();
     const diffConfig = DIFFICULTY_CONFIG[state.difficulty];
+    const notify = useNotificationStore.getState().addNotification;
     const newTurn = state.turn + 1;
     const newLogs: GameLog[] = [];
     let newCash = state.cash;
@@ -214,6 +216,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         message: `📉 파이프라인 없이 인건비만 지출 중... 시장 신뢰 하락`,
         type: "warning",
       });
+      notify("파이프라인 없이 인건비만 지출 중! 주가가 하락하고 있습니다.", "warning");
     } else if (newPipelines.length === 0 && newResearchers.length === 0) {
       // 아무것도 안 하면 소폭 하락 (-1%)
       newStockPrice = Math.round(newStockPrice * 0.99);
@@ -280,6 +283,7 @@ export const useGameStore = create<GameState>((set, get) => ({
               message: `🎉 [${pipeline.name}] FDA 승인! 신약 상용화 성공!`,
               type: "success",
             });
+            notify(`[${pipeline.name}] FDA 승인! 신약 상용화 성공!`, "success");
           } else {
             const nextConfig = CLINICAL_PHASES[nextPhase];
             const { speedBonus } = getResearcherBonus(
@@ -299,6 +303,7 @@ export const useGameStore = create<GameState>((set, get) => ({
               message: `✅ [${pipeline.name}] ${phaseConfig.label} 성공! → ${nextConfig.label} 진입 (비용: ${phaseCost.toFixed(0)}억)`,
               type: "success",
             });
+            notify(`[${pipeline.name}] ${phaseConfig.label} 성공! ${nextConfig.label}로 진입합니다.`, "success");
           }
         } else {
           // 실패
@@ -312,6 +317,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             message: `❌ [${pipeline.name}] ${phaseConfig.label} 실패... 파이프라인 폐기`,
             type: "danger",
           });
+          notify(`[${pipeline.name}] ${phaseConfig.label} 실패! 파이프라인이 폐기됩니다.`, "danger");
         }
       }
 
@@ -356,6 +362,10 @@ export const useGameStore = create<GameState>((set, get) => ({
           message: `⚠️ 상장폐지 경고! 3턴 내 주가를 ${config.delistingThreshold.toLocaleString()}원 이상으로 회복하세요!`,
           type: "warning",
         });
+        notify(`상장폐지 경고! 3턴 내 주가를 ${config.delistingThreshold.toLocaleString()}원 이상으로 회복하세요!`, "danger");
+      } else if (newDelistingWarning > 5) {
+        const remaining = 8 - newDelistingWarning;
+        notify(`상장폐지까지 ${remaining}턴 남았습니다! 주가를 올리세요!`, "danger");
       }
     } else {
       newDelistingWarning = 0;
