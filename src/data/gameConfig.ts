@@ -23,7 +23,7 @@ export type ResearcherGrade = "intern" | "junior" | "senior" | "expert";
 export const DIFFICULTY_CONFIG = {
   easy: {
     label: "이지",
-    initialCash: 50_000, // 500억 (단위: 억)
+    initialCash: 500, // 500억 (단위: 억)
     initialStockPrice: 15_000, // 15,000원
     delistingThreshold: 3_000, // 3,000원 이하 시 상장폐지 경고
     eventBias: 0.3, // 호재 확률 보정 (+30%)
@@ -35,7 +35,7 @@ export const DIFFICULTY_CONFIG = {
   },
   normal: {
     label: "노멀",
-    initialCash: 30_000,
+    initialCash: 300, // 300억
     initialStockPrice: 10_000,
     delistingThreshold: 5_000,
     eventBias: 0,
@@ -47,7 +47,7 @@ export const DIFFICULTY_CONFIG = {
   },
   hard: {
     label: "하드",
-    initialCash: 15_000,
+    initialCash: 150, // 150억
     initialStockPrice: 8_000,
     delistingThreshold: 5_000,
     eventBias: -0.2, // 악재 확률 보정 (+20%)
