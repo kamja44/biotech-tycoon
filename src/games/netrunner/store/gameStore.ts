@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { buildStarterDeck, getAllCardDefs, getCardDef } from "../data/cards";
-import { createEnemyInstance, getEnemyDef, getEnemyIdForFloor } from "../data/enemies";
+import { createEnemyInstance, getEnemyDef, getEnemyIdForFloor, getEliteEnemyId, getBossIdForAct } from "../data/enemies";
+import { generateActMap } from "../data/map";
+import type { ActMap } from "../data/map";
 
 // ─── 타입 정의 ──────────────────────────────────────────────
 
@@ -8,7 +10,10 @@ export type PlayerClass = "ghost" | "tank" | "hacker";
 export type GameMode = "story" | "endless";
 export type GamePhase =
   | "title"
+  | "map"
   | "combat"
+  | "event"
+  | "shop"
   | "reward"
   | "gameover"
   | "victory";
@@ -52,6 +57,8 @@ export interface EnemyInstance {
 export interface NetrunnerState {
   phase: GamePhase;
   mode: GameMode;
+  currentMap: ActMap | null;
+  currentNodeId: string | null;
   player: {
     class: PlayerClass;
     hp: number;
@@ -192,6 +199,8 @@ interface NetrunnerStore extends NetrunnerState {
   selectRewardCard: (cardId: string) => void;
   skipReward: () => void;
   resetGame: () => void;
+  enterMap: () => void;
+  selectNode: (nodeId: string) => void;
 }
 
 // ─── 스토어 ────────────────────────────────────────────────
@@ -201,6 +210,8 @@ export const useNetrunnerStore = create<NetrunnerStore>((set, get) => ({
   mode: "story",
   player: INITIAL_PLAYER,
   currentEnemy: null,
+  currentMap: null,
+  currentNodeId: null,
   run: INITIAL_RUN,
   pendingRewardCards: [],
   selectedCardIndex: null,
@@ -566,28 +577,18 @@ export const useNetrunnerStore = create<NetrunnerStore>((set, get) => ({
 
     const newCard = { id: cardId, upgraded: false };
     const newDeck = [...state.player.deck, newCard];
-    const shuffledDeck = shuffle(newDeck);
-
-    const nextFloor = state.run.floor;
-    const enemyId = getEnemyIdForFloor(nextFloor);
-    const newEnemy = createEnemyInstance(enemyId);
-    const drawn = drawCards([], shuffledDeck, [], 5);
+    const map = generateActMap();
 
     set({
-      phase: "combat",
+      phase: "map",
       player: {
         ...state.player,
         deck: newDeck,
-        hand: drawn.hand,
-        drawPile: drawn.drawPile,
-        discardPile: [],
-        block: 0,
-        energy: state.player.maxEnergy,
       },
-      currentEnemy: newEnemy,
+      currentMap: map,
+      currentNodeId: null,
       pendingRewardCards: [],
       selectedCardIndex: null,
-      combatLog: [`⚔️ 층 ${nextFloor} — ${newEnemy.definitionId} 등장!`],
     });
   },
 
@@ -595,26 +596,14 @@ export const useNetrunnerStore = create<NetrunnerStore>((set, get) => ({
     const state = get();
     if (state.phase !== "reward") return;
 
-    const shuffledDeck = shuffle(state.player.deck);
-    const nextFloor = state.run.floor;
-    const enemyId = getEnemyIdForFloor(nextFloor);
-    const newEnemy = createEnemyInstance(enemyId);
-    const drawn = drawCards([], shuffledDeck, [], 5);
+    const map = generateActMap();
 
     set({
-      phase: "combat",
-      player: {
-        ...state.player,
-        hand: drawn.hand,
-        drawPile: drawn.drawPile,
-        discardPile: [],
-        block: 0,
-        energy: state.player.maxEnergy,
-      },
-      currentEnemy: newEnemy,
+      phase: "map",
+      currentMap: map,
+      currentNodeId: null,
       pendingRewardCards: [],
       selectedCardIndex: null,
-      combatLog: [`⚔️ 층 ${nextFloor} — ${newEnemy.definitionId} 등장!`],
     });
   },
 
@@ -624,9 +613,65 @@ export const useNetrunnerStore = create<NetrunnerStore>((set, get) => ({
       mode: "story",
       player: INITIAL_PLAYER,
       currentEnemy: null,
+      currentMap: null,
+      currentNodeId: null,
       run: INITIAL_RUN,
       pendingRewardCards: [],
       selectedCardIndex: null,
       combatLog: [],
     }),
+
+  enterMap: () => {
+    const map = generateActMap();
+    set({ phase: "map", currentMap: map, currentNodeId: null });
+  },
+
+  selectNode: (nodeId: string) => {
+    const state = get();
+    if (!state.currentMap) return;
+
+    const node = state.currentMap.nodes.find((n) => n.id === nodeId);
+    if (!node) return;
+
+    // Mark visited
+    const updatedMap: ActMap = {
+      ...state.currentMap,
+      nodes: state.currentMap.nodes.map((n) =>
+        n.id === nodeId ? { ...n, visited: true } : n
+      ),
+    };
+
+    if (node.type === "combat" || node.type === "elite" || node.type === "boss") {
+      let enemyId: string;
+      if (node.type === "boss") enemyId = getBossIdForAct(state.run.act);
+      else if (node.type === "elite") enemyId = getEliteEnemyId();
+      else enemyId = getEnemyIdForFloor(state.run.floor);
+
+      const enemy = createEnemyInstance(enemyId);
+
+      const shuffledDeck = shuffle(state.player.deck);
+      const drawn = drawCards([], shuffledDeck, [], 5);
+
+      set({
+        phase: "combat",
+        currentMap: updatedMap,
+        currentNodeId: nodeId,
+        currentEnemy: enemy,
+        player: {
+          ...state.player,
+          hand: drawn.hand,
+          drawPile: drawn.drawPile,
+          discardPile: [],
+          block: 0,
+          energy: state.player.maxEnergy,
+        },
+        selectedCardIndex: null,
+        combatLog: [`⚔️ ${node.type === "boss" ? "보스" : node.type === "elite" ? "엘리트" : "전투"} 시작!`],
+      });
+    } else if (node.type === "event") {
+      set({ phase: "event", currentMap: updatedMap, currentNodeId: nodeId });
+    } else if (node.type === "shop") {
+      set({ phase: "shop", currentMap: updatedMap, currentNodeId: nodeId });
+    }
+  },
 }));
