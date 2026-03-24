@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useGameStore } from "@/store/gameStore";
+import Modal from "./Modal";
 
 /**
  * ActionPanel 컴포넌트
@@ -59,20 +60,7 @@ export default function ActionPanel() {
       {/* 유상증자 모달 */}
       <AnimatePresence>
         {showEquityModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowEquityModal(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-card-bg border border-card-border rounded-xl p-6 w-full max-w-sm"
-            >
+          <Modal onClose={() => setShowEquityModal(false)} maxWidth="max-w-sm">
               <h3 className="text-lg font-bold mb-4">유상증자</h3>
               <p className="text-xs text-foreground/40 mb-4">
                 시가총액의 일정 비율만큼 자금을 조달합니다. 주주 신뢰도가
@@ -129,8 +117,7 @@ export default function ActionPanel() {
                   실행
                 </button>
               </div>
-            </motion.div>
-          </motion.div>
+          </Modal>
         )}
       </AnimatePresence>
     </div>

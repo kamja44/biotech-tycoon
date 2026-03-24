@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { useGameStore } from "@/store/gameStore";
+import Modal from "./Modal";
 import {
   CLINICAL_PHASES,
   DISEASE_CATEGORIES,
@@ -97,9 +98,10 @@ export default function PipelinePanel() {
             const phaseConfig = CLINICAL_PHASES[pipeline.currentPhase];
             const diseaseConfig =
               DISEASE_CATEGORIES[pipeline.diseaseCategory];
-            const totalTurns = CLINICAL_PHASES[pipeline.currentPhase].turns;
             const progress =
-              ((totalTurns - pipeline.turnsRemaining) / totalTurns) * 100;
+              ((pipeline.initialTurns - pipeline.turnsRemaining) /
+                pipeline.initialTurns) *
+              100;
             const canSellLicense =
               !pipeline.licensed &&
               (pipeline.currentPhase === "phase2" ||
@@ -221,23 +223,17 @@ export default function PipelinePanel() {
                         )}
 
                         {/* 배정 가능한 연구원 */}
-                        {researchers.filter(
-                          (r) =>
-                            !pipeline.assignedResearchers.includes(r.id)
-                        ).length > 0 && (
+                        {(() => {
+                          const available = researchers.filter(
+                            (r) => !pipeline.assignedResearchers.includes(r.id)
+                          );
+                          return available.length > 0 ? (
                           <>
                             <p className="text-xs text-foreground/50 mb-2">
                               배정 가능한 연구원
                             </p>
                             <div className="flex flex-wrap gap-1.5 mb-3">
-                              {researchers
-                                .filter(
-                                  (r) =>
-                                    !pipeline.assignedResearchers.includes(
-                                      r.id
-                                    )
-                                )
-                                .map((r) => {
+                              {available.map((r) => {
                                   const grade = RESEARCHER_GRADES[r.grade];
                                   const specialty = DISEASE_CATEGORIES[r.specialty];
                                   const isMatch = r.specialty === pipeline.diseaseCategory;
@@ -275,7 +271,8 @@ export default function PipelinePanel() {
                                 })}
                             </div>
                           </>
-                        )}
+                          ) : null;
+                        })()}
 
                         {/* 라이선스 판매 버튼 */}
                         {canSellLicense && (
@@ -303,20 +300,7 @@ export default function PipelinePanel() {
       {/* 새 파이프라인 모달 */}
       <AnimatePresence>
         {showNewForm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowNewForm(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-card-bg border border-card-border rounded-xl p-6 w-full max-w-md"
-            >
+          <Modal onClose={() => setShowNewForm(false)}>
               <h3 className="text-lg font-bold mb-4">새 파이프라인 개시</h3>
 
               {/* 신약 이름 */}
@@ -395,9 +379,10 @@ export default function PipelinePanel() {
 
               {/* 비용 & 버튼 */}
               <div className="flex items-center justify-between">
-                <span className="text-xs text-foreground/40">
+                <span className={`text-xs ${cash < estimatedCost ? "text-danger" : "text-foreground/40"}`}>
                   전임상 비용: {estimatedCost.toFixed(0)}억 (보유:{" "}
                   {cash.toLocaleString()}억)
+                  {cash < estimatedCost && " ⚠ 적자 진행"}
                 </span>
                 <div className="flex gap-2">
                   <button
@@ -409,7 +394,7 @@ export default function PipelinePanel() {
                   </button>
                   <button
                     onClick={handleStartPipeline}
-                    disabled={!newName.trim() || cash < estimatedCost}
+                    disabled={!newName.trim()}
                     className="text-xs px-4 py-1.5 bg-primary text-background rounded-lg
                       hover:bg-primary-dark transition-colors disabled:opacity-30
                       disabled:cursor-not-allowed cursor-pointer"
@@ -418,8 +403,7 @@ export default function PipelinePanel() {
                   </button>
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
+          </Modal>
         )}
       </AnimatePresence>
     </div>

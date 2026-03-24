@@ -159,6 +159,21 @@ export const RESEARCHER_GRADES = {
   },
 } as const;
 
+/** 연구원 고용 계약금 계산 (월급 × 3개월 × 난이도 배율) */
+export function calcHiringCost(
+  grade: ResearcherGrade,
+  difficulty: Difficulty
+): number {
+  return (
+    Math.round(
+      RESEARCHER_GRADES[grade].salary *
+        3 *
+        DIFFICULTY_CONFIG[difficulty].hiringCostMultiplier *
+        10
+    ) / 10
+  );
+}
+
 /** 다음 임상 단계 반환 */
 export function getNextPhase(
   current: ClinicalPhase

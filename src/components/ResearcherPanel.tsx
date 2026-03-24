@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "framer-motion";
 import { useGameStore } from "@/store/gameStore";
 import {
   RESEARCHER_GRADES,
   DISEASE_CATEGORIES,
-  DIFFICULTY_CONFIG,
+  calcHiringCost,
   ResearcherGrade,
   DiseaseCategory,
 } from "@/data/gameConfig";
+import Modal from "./Modal";
 
 /** 랜덤 연구원 이름 풀 */
 const NAMES = [
@@ -46,9 +47,8 @@ export default function ResearcherPanel() {
   const [hireSpecialty, setHireSpecialty] =
     useState<DiseaseCategory>("common");
 
-  const diffConfig = DIFFICULTY_CONFIG[difficulty];
   const gradeConfig = RESEARCHER_GRADES[hireGrade];
-  const hiringCost = Math.round(gradeConfig.salary * 3 * diffConfig.hiringCostMultiplier * 10) / 10;
+  const hiringCost = calcHiringCost(hireGrade, difficulty);
 
   const handleHire = () => {
     const usedNames = new Set(researchers.map((r) => r.name));
@@ -129,20 +129,7 @@ export default function ResearcherPanel() {
       {/* 고용 모달 */}
       <AnimatePresence>
         {showHireForm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4"
-            onClick={() => setShowHireForm(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              onClick={(e) => e.stopPropagation()}
-              className="bg-card-bg border border-card-border rounded-xl p-6 w-full max-w-md"
-            >
+          <Modal onClose={() => setShowHireForm(false)}>
               <h3 className="text-lg font-bold mb-4">연구원 고용</h3>
 
               {/* 등급 선택 */}
@@ -226,8 +213,9 @@ export default function ResearcherPanel() {
 
               {/* 버튼 */}
               <div className="flex items-center justify-between">
-                <span className="text-xs text-foreground/40">
+                <span className={`text-xs ${cash < hiringCost ? "text-danger" : "text-foreground/40"}`}>
                   보유: {cash.toLocaleString()}억
+                  {cash < hiringCost && " ⚠ 적자 진행"}
                 </span>
                 <div className="flex gap-2">
                   <button
@@ -239,17 +227,14 @@ export default function ResearcherPanel() {
                   </button>
                   <button
                     onClick={handleHire}
-                    disabled={cash < hiringCost}
                     className="text-xs px-4 py-1.5 bg-accent text-background rounded-lg
-                      hover:bg-accent/80 transition-colors disabled:opacity-30
-                      disabled:cursor-not-allowed cursor-pointer"
+                      hover:bg-accent/80 transition-colors cursor-pointer"
                   >
                     고용 ({hiringCost}억)
                   </button>
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
+          </Modal>
         )}
       </AnimatePresence>
     </div>

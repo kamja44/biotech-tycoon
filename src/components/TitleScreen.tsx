@@ -2,9 +2,9 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import Link from "next/link";
 import Tutorial from "./Tutorial";
-
-type Difficulty = "easy" | "normal" | "hard";
+import type { Difficulty } from "@/data/gameConfig";
 
 interface DifficultyOption {
   key: Difficulty;
@@ -47,7 +47,7 @@ export default function TitleScreen({ onStart }: TitleScreenProps) {
   const [showTutorial, setShowTutorial] = useState(false);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-4">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] px-4">
       {/* 타이틀 */}
       <motion.div
         initial={{ opacity: 0, y: -30 }}
@@ -129,14 +129,21 @@ export default function TitleScreen({ onStart }: TitleScreenProps) {
       </motion.div>
 
       {/* 하단 정보 */}
-      <motion.p
+      <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.8, delay: 1 }}
-        className="text-foreground/20 text-xs mt-16"
+        className="flex items-center gap-4 mt-16"
       >
-        v0.1.0 · Open Source Project
-      </motion.p>
+        <p className="text-foreground/20 text-xs">v0.1.0 · Open Source Project</p>
+        <span className="text-foreground/20 text-xs">·</span>
+        <Link
+          href="/"
+          className="text-foreground/30 text-xs hover:text-foreground/60 transition-colors"
+        >
+          ← 게임 목록으로
+        </Link>
+      </motion.div>
 
       {/* 튜토리얼 모달 */}
       <AnimatePresence>

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import Link from "next/link";
 import { useGameStore } from "@/store/gameStore";
 
 interface VictoryScreenProps {
@@ -15,7 +16,7 @@ export default function VictoryScreen({ onRestart }: VictoryScreenProps) {
   const difficulty = useGameStore((s) => s.difficulty);
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen px-4">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-3.5rem)] px-4">
       <motion.div
         initial={{ opacity: 0, scale: 0.8 }}
         animate={{ opacity: 1, scale: 1 }}
@@ -50,15 +51,24 @@ export default function VictoryScreen({ onRestart }: VictoryScreenProps) {
             <p>승인 신약</p>
           </div>
         </div>
-        <motion.button
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={onRestart}
-          className="px-8 py-3 bg-accent/20 border border-accent rounded-lg
-            text-accent hover:bg-accent/30 transition-colors cursor-pointer"
-        >
-          다시 도전
-        </motion.button>
+        <div className="flex items-center gap-3 justify-center">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={onRestart}
+            className="px-8 py-3 bg-accent/20 border border-accent rounded-lg
+              text-accent hover:bg-accent/30 transition-colors cursor-pointer"
+          >
+            다시 도전
+          </motion.button>
+          <Link
+            href="/"
+            className="px-8 py-3 bg-transparent border border-foreground/20 rounded-lg
+              text-foreground/50 hover:text-foreground hover:border-foreground/40 transition-colors text-sm"
+          >
+            게임 목록으로
+          </Link>
+        </div>
       </motion.div>
     </div>
   );

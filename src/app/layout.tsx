@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import NavBar from "@/components/platform/NavBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,9 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Biotech Tycoon: Phase 3",
-  description:
-    "바이오테크 기업의 CEO가 되어 신약을 개발하고 시가총액 1조를 달성하세요!",
+  title: "GameHub",
+  description: "다양한 미니게임을 즐겨보세요!",
 };
 
 export default function RootLayout({
@@ -28,7 +28,10 @@ export default function RootLayout({
       lang="ko"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <NavBar />
+        {children}
+      </body>
     </html>
   );
 }

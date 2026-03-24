@@ -9,6 +9,7 @@ import {
   DISEASE_CATEGORIES,
   RESEARCHER_GRADES,
   getNextPhase,
+  calcHiringCost,
 } from "@/data/gameConfig";
 import { useNotificationStore } from "./notificationStore";
 
@@ -28,6 +29,7 @@ export interface Pipeline {
   diseaseCategory: DiseaseCategory;
   currentPhase: ClinicalPhase;
   turnsRemaining: number; // 현재 단계 남은 턴
+  initialTurns: number; // 현재 단계 시작 시 총 턴 수 (프로그레스 바 계산용)
   assignedResearchers: string[]; // 연구원 ID 목록
   licensed: boolean; // 라이선스 판매 여부
 }
@@ -99,6 +101,25 @@ interface GameState {
 
 const INITIAL_SHARES = 10_000_000; // 발행 주식 수 1000만주
 
+/** 게임 초기 상태 (resetGame 및 create 초기값 공유) */
+const INITIAL_STATE = {
+  difficulty: "normal" as Difficulty,
+  turn: 0,
+  phase: "title" as GameState["phase"],
+  cash: 0,
+  stockPrice: 0,
+  trust: 100,
+  marketCap: 0,
+  stockHistory: [] as StockHistoryPoint[],
+  researchers: [] as Researcher[],
+  pipelines: [] as Pipeline[],
+  approvedDrugs: 0,
+  equityOfferingCooldown: 0,
+  delistingWarningTurns: 0,
+  negativeCashTurns: 0,
+  logs: [] as GameLog[],
+};
+
 /** 시가총액 계산 (억 단위) */
 function calcMarketCap(stockPrice: number): number {
   return Math.floor((stockPrice * INITIAL_SHARES) / 100_000_000);
@@ -138,21 +159,7 @@ function getResearcherBonus(
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
-  difficulty: "normal",
-  turn: 0,
-  phase: "title",
-  cash: 0,
-  stockPrice: 0,
-  trust: 100,
-  marketCap: 0,
-  stockHistory: [],
-  researchers: [],
-  pipelines: [],
-  approvedDrugs: 0,
-  equityOfferingCooldown: 0,
-  delistingWarningTurns: 0,
-  negativeCashTurns: 0,
-  logs: [],
+  ...INITIAL_STATE,
 
   startGame: (difficulty) => {
     const config = DIFFICULTY_CONFIG[difficulty];
@@ -212,6 +219,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       });
     }
 
+    // 1.5. 신뢰도 기반 주가 보정 (+0.3% or -0.3%)
+    if (newTrust >= 70) {
+      newStockPrice = Math.round(newStockPrice * 1.003);
+    } else if (newTrust < 40) {
+      newStockPrice = Math.round(newStockPrice * 0.997);
+    }
+
     // 2. 파이프라인이 없는데 비용이 나가면 주가 하락 (시장의 불신)
     if (newPipelines.length === 0 && newResearchers.length > 0) {
       // 연구원은 있는데 파이프라인이 없으면 -2~4% 하락
@@ -246,7 +260,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       // 임상 단계 완료 판정
       if (updated.turnsRemaining <= 0) {
-        const { successBonus } = getResearcherBonus(
+        const { successBonus, speedBonus: rawSpeedBonus } = getResearcherBonus(
           newResearchers,
           pipeline.assignedResearchers,
           pipeline.diseaseCategory
@@ -292,16 +306,17 @@ export const useGameStore = create<GameState>((set, get) => ({
             notify(`[${pipeline.name}] FDA 승인! 신약 상용화 성공!`, "success");
           } else {
             const nextConfig = CLINICAL_PHASES[nextPhase];
-            const { speedBonus } = getResearcherBonus(
-              newResearchers,
-              pipeline.assignedResearchers,
-              pipeline.diseaseCategory
+            const speedBonusCapped = Math.min(
+              rawSpeedBonus,
+              Math.floor(nextConfig.turns * 0.6)
+            );
+            const newTurnsRemaining = Math.max(
+              1,
+              nextConfig.turns - speedBonusCapped
             );
             updated.currentPhase = nextPhase;
-            updated.turnsRemaining = Math.max(
-              1,
-              nextConfig.turns - speedBonus
-            );
+            updated.turnsRemaining = newTurnsRemaining;
+            updated.initialTurns = newTurnsRemaining;
             const phaseCost = nextConfig.cost * diseaseConfig.costMultiplier * diffConfig.clinicalCostMultiplier;
             newCash -= phaseCost;
             newLogs.push({
@@ -349,11 +364,22 @@ export const useGameStore = create<GameState>((set, get) => ({
       if (newDelistingWarning >= 8) {
         // 5턴 경고 + 3턴 유예 = 8턴
         set({
-          ...state,
           phase: "gameover",
           turn: newTurn,
+          cash: newCash,
+          stockPrice: newStockPrice,
+          trust: newTrust,
+          marketCap: newMarketCap,
+          stockHistory: [...state.stockHistory, { turn: newTurn, price: newStockPrice }],
+          researchers: newResearchers,
+          pipelines: newPipelines,
+          approvedDrugs: newApproved,
+          equityOfferingCooldown: newCooldown,
+          delistingWarningTurns: newDelistingWarning,
+          negativeCashTurns: newNegativeCashTurns,
           logs: [
             ...state.logs,
+            ...newLogs,
             {
               turn: newTurn,
               message: "상장폐지로 게임이 종료되었습니다.",
@@ -374,6 +400,14 @@ export const useGameStore = create<GameState>((set, get) => ({
         notify(`상장폐지까지 ${remaining}턴 남았습니다! 주가를 올리세요!`, "danger");
       }
     } else {
+      if (newDelistingWarning > 0) {
+        notify("주가가 회복되었습니다! 상장폐지 위기를 벗어났습니다.", "success");
+        newLogs.push({
+          turn: newTurn,
+          message: "📈 주가 회복! 상장폐지 위기를 벗어났습니다.",
+          type: "success",
+        });
+      }
       newDelistingWarning = 0;
     }
 
@@ -382,10 +416,18 @@ export const useGameStore = create<GameState>((set, get) => ({
       newNegativeCashTurns++;
       if (newNegativeCashTurns >= 36) {
         set({
-          ...state,
           phase: "gameover",
-          cash: newCash,
           turn: newTurn,
+          cash: newCash,
+          stockPrice: newStockPrice,
+          trust: newTrust,
+          marketCap: newMarketCap,
+          stockHistory: [...state.stockHistory, { turn: newTurn, price: newStockPrice }],
+          researchers: newResearchers,
+          pipelines: newPipelines,
+          approvedDrugs: newApproved,
+          equityOfferingCooldown: newCooldown,
+          delistingWarningTurns: newDelistingWarning,
           negativeCashTurns: newNegativeCashTurns,
           logs: [
             ...state.logs,
@@ -471,10 +513,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   hireResearcher: (researcher) => {
     const state = get();
-    const diffConfig = DIFFICULTY_CONFIG[state.difficulty];
-    const salary = RESEARCHER_GRADES[researcher.grade].salary;
-    // 고용 시 3개월치 계약금 × 난이도 배율
-    const hiringCost = Math.round(salary * 3 * diffConfig.hiringCostMultiplier * 10) / 10;
+    const hiringCost = calcHiringCost(researcher.grade, state.difficulty);
     // 적자여도 고용 가능 (36턴 파산 규칙)
     // 단, 고용 후 잔액이 현재 자본금 - 비용
 
@@ -533,18 +572,24 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // 적자여도 파이프라인 개시 가능 (36턴 파산 규칙)
 
-    const { speedBonus } = getResearcherBonus(
+    const { speedBonus: rawSpeedBonus } = getResearcherBonus(
       state.researchers,
       researcherIds,
       diseaseCategory
     );
+    const speedBonusCapped = Math.min(
+      rawSpeedBonus,
+      Math.floor(firstPhase.turns * 0.6)
+    );
+    const initialTurns = Math.max(1, firstPhase.turns - speedBonusCapped);
 
     const pipeline: Pipeline = {
       id: generateId(),
       name,
       diseaseCategory,
       currentPhase: "preclinical",
-      turnsRemaining: Math.max(1, firstPhase.turns - speedBonus),
+      turnsRemaining: initialTurns,
+      initialTurns,
       assignedResearchers: researcherIds,
       licensed: false,
     };
@@ -659,23 +704,5 @@ export const useGameStore = create<GameState>((set, get) => ({
     });
   },
 
-  resetGame: () => {
-    set({
-      difficulty: "normal",
-      turn: 0,
-      phase: "title",
-      cash: 0,
-      stockPrice: 0,
-      trust: 100,
-      marketCap: 0,
-      stockHistory: [],
-      researchers: [],
-      pipelines: [],
-      approvedDrugs: 0,
-      equityOfferingCooldown: 0,
-      delistingWarningTurns: 0,
-      negativeCashTurns: 0,
-      logs: [],
-    });
-  },
+  resetGame: () => set({ ...INITIAL_STATE, logs: [], stockHistory: [], researchers: [], pipelines: [] }),
 }));

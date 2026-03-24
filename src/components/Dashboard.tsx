@@ -17,7 +17,7 @@ import GameLog from "./GameLog";
  */
 export default function Dashboard() {
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-[calc(100vh-3.5rem)] flex flex-col">
       {/* 상단 자원 바 */}
       <ResourceBar />
 
