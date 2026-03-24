@@ -3,6 +3,8 @@ import { buildStarterDeck, getAllCardDefs, getCardDef } from "../data/cards";
 import { createEnemyInstance, getEnemyDef, getEnemyIdForFloor, getEliteEnemyId, getBossIdForAct } from "../data/enemies";
 import { generateActMap } from "../data/map";
 import type { ActMap } from "../data/map";
+import type { EventScenario } from "../data/events";
+import { getRandomEvent } from "../data/events";
 
 // ─── 타입 정의 ──────────────────────────────────────────────
 
@@ -84,6 +86,8 @@ export interface NetrunnerState {
   pendingRewardCards: string[];
   selectedCardIndex: number | null;
   combatLog: string[];
+  currentEvent: EventScenario | null;
+  shopCards: string[];
 }
 
 // ─── 초기 플레이어 상태 ──────────────────────────────────────
@@ -201,6 +205,9 @@ interface NetrunnerStore extends NetrunnerState {
   resetGame: () => void;
   enterMap: () => void;
   selectNode: (nodeId: string) => void;
+  resolveEvent: (choiceIndex: number) => void;
+  buyCard: (cardId: string, price: number) => void;
+  removeCardFromDeck: (cardIndex: number) => void;
 }
 
 // ─── 스토어 ────────────────────────────────────────────────
@@ -216,6 +223,8 @@ export const useNetrunnerStore = create<NetrunnerStore>((set, get) => ({
   pendingRewardCards: [],
   selectedCardIndex: null,
   combatLog: [],
+  currentEvent: null,
+  shopCards: [],
 
   startGame: (playerClass, mode) => {
     const classStat: Record<PlayerClass, { hp: number }> = {
@@ -619,11 +628,103 @@ export const useNetrunnerStore = create<NetrunnerStore>((set, get) => ({
       pendingRewardCards: [],
       selectedCardIndex: null,
       combatLog: [],
+      currentEvent: null,
+      shopCards: [],
     }),
 
   enterMap: () => {
     const map = generateActMap();
     set({ phase: "map", currentMap: map, currentNodeId: null });
+  },
+
+  resolveEvent: (choiceIndex) => {
+    const state = get();
+    const event = state.currentEvent;
+    if (!event) return;
+
+    const choice = event.choices[choiceIndex];
+    if (!choice) return;
+
+    // Determine actual effects (probability check)
+    let effects = choice.effects;
+    if (choice.probability != null && choice.altEffects) {
+      effects = Math.random() < choice.probability ? choice.effects : choice.altEffects;
+    }
+
+    let newPlayer = { ...state.player };
+    let newDeck = [...state.player.deck];
+
+    for (const effect of effects) {
+      if (effect.type === "gain_gold") {
+        newPlayer = { ...newPlayer, gold: newPlayer.gold + effect.amount };
+      } else if (effect.type === "lose_gold") {
+        newPlayer = { ...newPlayer, gold: Math.max(0, newPlayer.gold - effect.amount) };
+      } else if (effect.type === "heal") {
+        newPlayer = { ...newPlayer, hp: Math.min(newPlayer.maxHp, newPlayer.hp + effect.amount) };
+      } else if (effect.type === "lose_hp") {
+        newPlayer = { ...newPlayer, hp: Math.max(1, newPlayer.hp - effect.amount) };
+      } else if (effect.type === "gain_max_hp") {
+        newPlayer = { ...newPlayer, maxHp: newPlayer.maxHp + effect.amount, hp: newPlayer.hp + effect.amount };
+      } else if (effect.type === "gain_card") {
+        const pool = getAllCardDefs().filter((c) =>
+          c.rarity === effect.rarity && (c.classes.includes(newPlayer.class) || c.classes.includes("neutral"))
+        );
+        if (pool.length > 0) {
+          const picked = pool[Math.floor(Math.random() * pool.length)];
+          newDeck = [...newDeck, { id: picked.id, upgraded: false }];
+        }
+      } else if (effect.type === "remove_card") {
+        // Remove a random non-starter card if possible, else first card
+        if (newDeck.length > 0) {
+          const idx = Math.floor(Math.random() * newDeck.length);
+          newDeck = newDeck.filter((_, i) => i !== idx);
+        }
+      } else if (effect.type === "upgrade_card") {
+        // Upgrade a random non-upgraded card
+        const upgradable = newDeck.findIndex((c) => !c.upgraded);
+        if (upgradable >= 0) {
+          newDeck = newDeck.map((c, i) => i === upgradable ? { ...c, upgraded: true } : c);
+        }
+      }
+      // apply_status: stored as pending, applied next combat — simplified: skip for now
+      // nothing: no-op
+    }
+
+    const map = generateActMap();
+    set({
+      phase: "map",
+      player: { ...newPlayer, deck: newDeck },
+      currentEvent: null,
+      currentMap: state.currentMap ?? map,
+      currentNodeId: state.currentNodeId,
+    });
+  },
+
+  buyCard: (cardId, price) => {
+    const state = get();
+    if (state.player.gold < price) return;
+    const newCard = { id: cardId, upgraded: false };
+    set({
+      player: {
+        ...state.player,
+        gold: state.player.gold - price,
+        deck: [...state.player.deck, newCard],
+      },
+      shopCards: state.shopCards.filter((id) => id !== cardId),
+    });
+  },
+
+  removeCardFromDeck: (cardIndex) => {
+    const state = get();
+    const REMOVE_COST = 75;
+    if (state.player.gold < REMOVE_COST) return;
+    set({
+      player: {
+        ...state.player,
+        gold: state.player.gold - REMOVE_COST,
+        deck: state.player.deck.filter((_, i) => i !== cardIndex),
+      },
+    });
   },
 
   selectNode: (nodeId: string) => {
@@ -669,9 +770,13 @@ export const useNetrunnerStore = create<NetrunnerStore>((set, get) => ({
         combatLog: [`⚔️ ${node.type === "boss" ? "보스" : node.type === "elite" ? "엘리트" : "전투"} 시작!`],
       });
     } else if (node.type === "event") {
-      set({ phase: "event", currentMap: updatedMap, currentNodeId: nodeId });
+      set({ phase: "event", currentMap: updatedMap, currentNodeId: nodeId, currentEvent: getRandomEvent() });
     } else if (node.type === "shop") {
-      set({ phase: "shop", currentMap: updatedMap, currentNodeId: nodeId });
+      const allCards = getAllCardDefs().filter((c) =>
+        c.classes.includes(state.player.class) || c.classes.includes("neutral")
+      );
+      const shopCards = shuffle(allCards).slice(0, 4).map((c) => c.id);
+      set({ phase: "shop", currentMap: updatedMap, currentNodeId: nodeId, shopCards });
     }
   },
 }));
