@@ -3,6 +3,7 @@ import { useNetrunnerStore } from "../store/gameStore";
 
 export default function GameOverScreen() {
   const run = useNetrunnerStore((s) => s.run);
+  const highScore = useNetrunnerStore((s) => s.highScore);
   const resetGame = useNetrunnerStore((s) => s.resetGame);
   const combatLog = useNetrunnerStore((s) => s.combatLog);
   const lastLog = combatLog[combatLog.length - 1] ?? "";
@@ -14,6 +15,8 @@ export default function GameOverScreen() {
       <p className="text-gray-400">넷러너는 추적당했습니다.</p>
       <div className="bg-gray-900 rounded-xl px-6 py-4 text-center space-y-1">
         <p className="text-gray-300 text-sm">층 {run.floor} / 처치 {run.enemiesDefeated}마리</p>
+        <p className="text-gray-400 text-sm">점수 {run.score}</p>
+        <p className="text-cyan-400 text-sm">최고 기록: {highScore}점</p>
         <p className="text-gray-500 text-xs">{lastLog}</p>
       </div>
       <button

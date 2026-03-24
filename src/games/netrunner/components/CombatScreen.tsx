@@ -10,6 +10,7 @@ export default function CombatScreen() {
   const enemy = useNetrunnerStore((s) => s.currentEnemy);
   const selectedCardIndex = useNetrunnerStore((s) => s.selectedCardIndex);
   const run = useNetrunnerStore((s) => s.run);
+  const mode = useNetrunnerStore((s) => s.mode);
   const combatLog = useNetrunnerStore((s) => s.combatLog);
   const selectCard = useNetrunnerStore((s) => s.selectCard);
   const playCard = useNetrunnerStore((s) => s.playCard);
@@ -41,7 +42,10 @@ export default function CombatScreen() {
         <div className="text-cyan-400 font-mono text-sm">
           ACT {run.act} — 층 {run.floor} / 3
         </div>
-        <div className="text-gray-400 text-sm font-mono">💰 {player.gold}G</div>
+        <div className="flex gap-4 text-sm font-mono">
+          {mode === "endless" && <span className="text-yellow-300">🏅 {run.score}점</span>}
+          <span className="text-gray-400">💰 {player.gold}G</span>
+        </div>
       </div>
 
       {/* 전투 영역 */}

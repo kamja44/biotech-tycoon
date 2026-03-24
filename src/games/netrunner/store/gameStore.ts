@@ -1,10 +1,12 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { buildStarterDeck, getAllCardDefs, getCardDef } from "../data/cards";
 import { createEnemyInstance, getEnemyDef, getEnemyIdForFloor, getEliteEnemyId, getBossIdForAct } from "../data/enemies";
 import { generateActMap } from "../data/map";
 import type { ActMap } from "../data/map";
 import type { EventScenario } from "../data/events";
 import { getRandomEvent } from "../data/events";
+import { getRelicDef, getRandomRelic } from "../data/relics";
 
 // ─── 타입 정의 ──────────────────────────────────────────────
 
@@ -88,6 +90,7 @@ export interface NetrunnerState {
   combatLog: string[];
   currentEvent: EventScenario | null;
   shopCards: string[];
+  highScore: number;
 }
 
 // ─── 초기 플레이어 상태 ──────────────────────────────────────
@@ -193,6 +196,32 @@ export function tickStatusEffects(
   return { newEffects, damage };
 }
 
+// ─── 유물 전투 시작 적용 헬퍼 ────────────────────────────────
+
+function applyCombatStartRelics(
+  player: NetrunnerState["player"],
+  enemy: EnemyInstance,
+  drawn: { hand: CardInstance[]; drawPile: CardInstance[]; discardPile: CardInstance[] }
+): { player: NetrunnerState["player"]; enemy: EnemyInstance; hand: CardInstance[]; drawPile: CardInstance[]; discardPile: CardInstance[] } {
+  let newPlayer = { ...player };
+  let newEnemy = { ...enemy };
+  let { hand, drawPile, discardPile } = drawn;
+
+  for (const r of player.relics) {
+    const def = getRelicDef(r.id);
+    if (!def || def.trigger !== "on_combat_start") continue;
+    if (def.effect.type === "gain_energy") newPlayer = { ...newPlayer, energy: newPlayer.energy + def.effect.amount };
+    if (def.effect.type === "heal") newPlayer = { ...newPlayer, hp: Math.min(newPlayer.maxHp, newPlayer.hp + def.effect.amount) };
+    if (def.effect.type === "add_block") newPlayer = { ...newPlayer, block: newPlayer.block + def.effect.amount };
+    if (def.effect.type === "draw_cards") {
+      const d = drawCards(hand, drawPile, discardPile, def.effect.amount);
+      hand = d.hand; drawPile = d.drawPile; discardPile = d.discardPile;
+    }
+    if (def.effect.type === "start_bleed") newEnemy = { ...newEnemy, statusEffects: applyStatus(newEnemy.statusEffects, "bleed", def.effect.stacks) };
+  }
+  return { player: newPlayer, enemy: newEnemy, hand, drawPile, discardPile };
+}
+
 // ─── 스토어 인터페이스 ──────────────────────────────────────
 
 interface NetrunnerStore extends NetrunnerState {
@@ -208,416 +237,14 @@ interface NetrunnerStore extends NetrunnerState {
   resolveEvent: (choiceIndex: number) => void;
   buyCard: (cardId: string, price: number) => void;
   removeCardFromDeck: (cardIndex: number) => void;
+  gainRelic: (relicId: string) => void;
 }
 
 // ─── 스토어 ────────────────────────────────────────────────
 
-export const useNetrunnerStore = create<NetrunnerStore>((set, get) => ({
-  phase: "title",
-  mode: "story",
-  player: INITIAL_PLAYER,
-  currentEnemy: null,
-  currentMap: null,
-  currentNodeId: null,
-  run: INITIAL_RUN,
-  pendingRewardCards: [],
-  selectedCardIndex: null,
-  combatLog: [],
-  currentEvent: null,
-  shopCards: [],
-
-  startGame: (playerClass, mode) => {
-    const classStat: Record<PlayerClass, { hp: number }> = {
-      ghost: { hp: 75 },
-      tank: { hp: 100 },
-      hacker: { hp: 70 },
-    };
-
-    const hp = classStat[playerClass].hp;
-    const starterDeck = buildStarterDeck(playerClass);
-    const shuffledDeck = shuffle(starterDeck);
-    const floor = 1;
-    const enemyId = getEnemyIdForFloor(floor);
-    const enemy = createEnemyInstance(enemyId);
-    const drawn = drawCards([], shuffledDeck, [], 5);
-
-    set({
-      phase: "combat",
-      mode,
-      player: {
-        class: playerClass,
-        hp,
-        maxHp: hp,
-        gold: 99,
-        block: 0,
-        energy: 3,
-        maxEnergy: 3,
-        deck: starterDeck,
-        hand: drawn.hand,
-        drawPile: drawn.drawPile,
-        discardPile: [],
-        relics: [],
-        statusEffects: [],
-      },
-      currentEnemy: enemy,
-      run: { act: 1, floor, score: 0, enemiesDefeated: 0 },
-      pendingRewardCards: [],
-      selectedCardIndex: null,
-      combatLog: [`⚔️ ${enemy.definitionId === "ice_warden" ? "보스" : "전투"} 시작!`],
-    });
-  },
-
-  selectCard: (index) => set({ selectedCardIndex: index }),
-
-  playCard: (index) => {
-    const state = get();
-    if (state.phase !== "combat") return;
-    const { player, currentEnemy } = state;
-    if (!currentEnemy) return;
-
-    const card = player.hand[index];
-    if (!card) return;
-
-    const def = getCardDef(card.id);
-
-    // 에너지 체크
-    if (player.energy < def.cost) return;
-
-    // 잠금(lock) 상태: 패의 첫 번째 카드 사용 불가
-    const lockEffect = player.statusEffects.find((e) => e.id === "lock");
-    if (lockEffect && index === 0) return;
-
-    // 감전(shock) 상태: 블록 액션이 있는 카드 사용 불가
-    const hasShock = player.statusEffects.some((e) => e.id === "shock");
-    if (hasShock) {
-      const previewActions = def.effect(
-        { playerHp: 0, playerMaxHp: 0, playerBlock: 0, playerEnergy: 0, playerHandSize: 0, playerCardsPlayedThisTurn: 0, enemyHp: 0, enemyMaxHp: 0, enemyBlock: 0 },
-        card.upgraded
-      );
-      const hasBlockAction = previewActions.some(
-        (a) => a.type === "add_block" && (a as { target: string }).target === "player"
-      );
-      if (hasBlockAction) return;
-    }
-
-    const cardsPlayedThisTurn = state.combatLog.filter((l) => l.startsWith("▶")).length;
-
-    const ctx = {
-      playerHp: player.hp,
-      playerMaxHp: player.maxHp,
-      playerBlock: player.block,
-      playerEnergy: player.energy,
-      playerHandSize: player.hand.length,
-      playerCardsPlayedThisTurn: cardsPlayedThisTurn,
-      enemyHp: currentEnemy.hp,
-      enemyMaxHp: currentEnemy.maxHp,
-      enemyBlock: currentEnemy.block,
-    };
-
-    const actions = def.effect(ctx, card.upgraded);
-    let newPlayer = { ...player, energy: player.energy - def.cost };
-    let newEnemy = { ...currentEnemy };
-    const newLog = [...state.combatLog, `▶ ${def.name} 사용`];
-
-    // 액션 실행
-    for (const action of actions) {
-      if (action.type === "deal_damage") {
-        if (action.target === "enemy") {
-          let dmg = action.amount;
-          // 처형: 출혈 상태 적에게 2배
-          if (card.id === "ghost_execution" && newEnemy.statusEffects.some((e) => e.id === "bleed")) {
-            dmg *= 2;
-          }
-          const absorbed = Math.min(newEnemy.block, dmg);
-          newEnemy = {
-            ...newEnemy,
-            block: newEnemy.block - absorbed,
-            hp: newEnemy.hp - (dmg - absorbed),
-          };
-          newLog.push(`💥 적에게 ${dmg - absorbed} 피해 (블록 ${absorbed} 흡수)`);
-        } else {
-          const absorbed = Math.min(newPlayer.block, action.amount);
-          newPlayer = {
-            ...newPlayer,
-            block: newPlayer.block - absorbed,
-            hp: newPlayer.hp - (action.amount - absorbed),
-          };
-        }
-      } else if (action.type === "add_block") {
-        if (action.target === "player") {
-          newPlayer = { ...newPlayer, block: newPlayer.block + action.amount };
-          newLog.push(`🛡️ 블록 +${action.amount}`);
-        } else {
-          newEnemy = { ...newEnemy, block: newEnemy.block + action.amount };
-        }
-      } else if (action.type === "apply_status") {
-        if (action.target === "enemy") {
-          newEnemy = { ...newEnemy, statusEffects: applyStatus(newEnemy.statusEffects, action.status, action.stacks) };
-          newLog.push(`⚠️ 적에게 ${action.status} ${action.stacks} 부여`);
-        } else {
-          newPlayer = { ...newPlayer, statusEffects: applyStatus(newPlayer.statusEffects, action.status, action.stacks) };
-        }
-      } else if (action.type === "draw_cards") {
-        const drawn = drawCards(newPlayer.hand, newPlayer.drawPile, newPlayer.discardPile, action.amount);
-        newPlayer = { ...newPlayer, hand: drawn.hand, drawPile: drawn.drawPile, discardPile: drawn.discardPile };
-      } else if (action.type === "draw_from_discard") {
-        if (newPlayer.discardPile.length > 0) {
-          const idx = Math.floor(Math.random() * newPlayer.discardPile.length);
-          const picked = newPlayer.discardPile[idx];
-          newPlayer = {
-            ...newPlayer,
-            hand: [...newPlayer.hand, picked],
-            discardPile: newPlayer.discardPile.filter((_, i) => i !== idx),
-          };
-        }
-      } else if (action.type === "gain_energy") {
-        newPlayer = { ...newPlayer, energy: newPlayer.energy + action.amount };
-      } else if (action.type === "heal") {
-        newPlayer = { ...newPlayer, hp: Math.min(newPlayer.maxHp, newPlayer.hp + action.amount) };
-        newLog.push(`💊 HP +${action.amount}`);
-      }
-    }
-
-    // 카드를 패에서 버린 더미로 이동 (파워는 소멸)
-    const newHand = newPlayer.hand.filter((_, i) => i !== index);
-    const newDiscard = def.type === "power" ? newPlayer.discardPile : [...newPlayer.discardPile, card];
-    newPlayer = { ...newPlayer, hand: newHand, discardPile: newDiscard };
-
-    // 적 HP 0 이하 → 전투 승리
-    if (newEnemy.hp <= 0) {
-      const enemyDef = getEnemyDef(newEnemy.definitionId);
-      const gold = enemyDef.goldMin + Math.floor(Math.random() * (enemyDef.goldMax - enemyDef.goldMin + 1));
-
-      const pool = getAllCardDefs().filter((c) =>
-        c.classes.includes(newPlayer.class) || c.classes.includes("neutral")
-      );
-      const shuffledPool = shuffle(pool).slice(0, 3).map((c) => c.id);
-
-      const newFloor = state.run.floor + 1;
-      const isVictory = newFloor > 3;
-
-      set({
-        phase: isVictory ? "victory" : "reward",
-        player: { ...newPlayer, gold: newPlayer.gold + gold, block: 0 },
-        currentEnemy: newEnemy,
-        run: { ...state.run, floor: newFloor, enemiesDefeated: state.run.enemiesDefeated + 1 },
-        pendingRewardCards: shuffledPool,
-        selectedCardIndex: null,
-        combatLog: [...newLog, `🏆 ${enemyDef.name} 처치! 골드 +${gold}`],
-      });
-      return;
-    }
-
-    set({
-      player: newPlayer,
-      currentEnemy: newEnemy,
-      selectedCardIndex: null,
-      combatLog: newLog,
-    });
-  },
-
-  endTurn: () => {
-    const state = get();
-    if (state.phase !== "combat") return;
-    const { player, currentEnemy } = state;
-    if (!currentEnemy) return;
-
-    const enemyDef = getEnemyDef(currentEnemy.definitionId);
-
-    let newPlayer = { ...player };
-    let newEnemy = { ...currentEnemy };
-    const newLog = [...state.combatLog, "--- 턴 종료 ---"];
-
-    // 1. 플레이어 상태이상 tick (출혈 피해)
-    const playerTick = tickStatusEffects(newPlayer.statusEffects);
-    newPlayer = {
-      ...newPlayer,
-      hp: newPlayer.hp - playerTick.damage,
-      statusEffects: playerTick.newEffects,
-    };
-    if (playerTick.damage > 0) newLog.push(`🔴 출혈로 ${playerTick.damage} 피해`);
-
-    // 2. 플레이어 블록 초기화
-    newPlayer = { ...newPlayer, block: 0 };
-
-    // 3. 적 행동 실행
-    const pattern = enemyDef.patterns[newEnemy.patternIndex % enemyDef.patterns.length];
-    for (const action of pattern.actions) {
-      if (action.type === "attack") {
-        const bonus = newEnemy.enraged ? (enemyDef.enrageAttackBonus ?? 0) : 0;
-        const overloadEffect = newPlayer.statusEffects.find((e) => e.id === "overload");
-        const overloadBonus = overloadEffect ? overloadEffect.stacks * 3 : 0;
-        const totalDmg = action.amount + bonus + overloadBonus;
-
-        if (overloadEffect) {
-          newPlayer = {
-            ...newPlayer,
-            statusEffects: newPlayer.statusEffects.filter((e) => e.id !== "overload"),
-          };
-          newLog.push(`💀 과부하 발동! 추가 ${overloadBonus} 피해`);
-        }
-
-        // dodge: 이번 공격 1회 회피
-        const dodgeEffect = newPlayer.statusEffects.find((e) => e.id === "dodge");
-        if (dodgeEffect) {
-          const newDodgeStacks = dodgeEffect.stacks - 1;
-          newPlayer = {
-            ...newPlayer,
-            statusEffects: newPlayer.statusEffects
-              .filter((e) => e.id !== "dodge")
-              .concat(newDodgeStacks > 0 ? [{ id: "dodge" as const, stacks: newDodgeStacks }] : []),
-          };
-          newLog.push(`✨ 회피 성공! (남은 dodge: ${newDodgeStacks})`);
-          continue;
-        }
-
-        const absorbed = Math.min(newPlayer.block, totalDmg);
-        newPlayer = {
-          ...newPlayer,
-          block: newPlayer.block - absorbed,
-          hp: newPlayer.hp - (totalDmg - absorbed),
-        };
-        newLog.push(`👊 적의 공격: ${totalDmg} 피해`);
-      } else if (action.type === "defend") {
-        newEnemy = { ...newEnemy, block: newEnemy.block + action.amount };
-        newLog.push(`🛡️ 적 블록 +${action.amount}`);
-      } else if (action.type === "apply_status") {
-        newPlayer = {
-          ...newPlayer,
-          statusEffects: applyStatus(newPlayer.statusEffects, action.status, action.stacks),
-        };
-        newLog.push(`⚡ 적이 ${action.status} ${action.stacks} 부여`);
-      }
-    }
-
-    // 4. 적 상태이상 tick
-    const enemyTick = tickStatusEffects(newEnemy.statusEffects);
-    newEnemy = {
-      ...newEnemy,
-      hp: newEnemy.hp - enemyTick.damage,
-      statusEffects: enemyTick.newEffects,
-    };
-    if (enemyTick.damage > 0) newLog.push(`🔴 적 출혈: ${enemyTick.damage} 피해`);
-
-    // 5. 적 블록 초기화
-    newEnemy = { ...newEnemy, block: 0 };
-
-    // 6. 패턴 인덱스 증가
-    const nextPatternIndex = (newEnemy.patternIndex + 1) % enemyDef.patterns.length;
-    const nextIntent = enemyDef.patterns[nextPatternIndex].intent;
-
-    // 7. 분노 체크
-    const enrageThreshold = enemyDef.enrageHpPercent ?? 0;
-    const shouldEnrage =
-      !newEnemy.enraged &&
-      enrageThreshold > 0 &&
-      newEnemy.hp / newEnemy.maxHp <= enrageThreshold;
-    if (shouldEnrage) {
-      newLog.push(`🔥 ${enemyDef.name} 분노!`);
-    }
-
-    newEnemy = {
-      ...newEnemy,
-      patternIndex: nextPatternIndex,
-      intent: nextIntent,
-      enraged: newEnemy.enraged || shouldEnrage,
-    };
-
-    // 8. 플레이어 HP 0 이하 → 게임오버
-    if (newPlayer.hp <= 0) {
-      set({
-        phase: "gameover",
-        player: { ...newPlayer, hp: 0 },
-        currentEnemy: newEnemy,
-        combatLog: [...newLog, "💀 사망..."],
-      });
-      return;
-    }
-
-    // 9. 적 HP 0 이하 (상태이상 틱 등으로) → 보상
-    if (newEnemy.hp <= 0) {
-      const gold = enemyDef.goldMin + Math.floor(Math.random() * (enemyDef.goldMax - enemyDef.goldMin + 1));
-      const pool = getAllCardDefs().filter((c) =>
-        c.classes.includes(newPlayer.class) || c.classes.includes("neutral")
-      );
-      const rewardCards = shuffle(pool).slice(0, 3).map((c) => c.id);
-      const newFloor = state.run.floor + 1;
-      const isVictory = newFloor > 3;
-
-      set({
-        phase: isVictory ? "victory" : "reward",
-        player: { ...newPlayer, gold: newPlayer.gold + gold, block: 0 },
-        currentEnemy: newEnemy,
-        run: { ...state.run, floor: newFloor, enemiesDefeated: state.run.enemiesDefeated + 1 },
-        pendingRewardCards: rewardCards,
-        selectedCardIndex: null,
-        combatLog: [...newLog, `🏆 처치! 골드 +${gold}`],
-      });
-      return;
-    }
-
-    // 10. 다음 턴 시작 — 패 전부 버리고 5장 드로우, 에너지 충전
-    const allDiscard = [...newPlayer.discardPile, ...newPlayer.hand];
-    const drawn = drawCards([], newPlayer.drawPile, allDiscard, 5);
-
-    // 암살자의 표식 파워: 추가 1장 드로우
-    const hasMarkPower = newPlayer.deck.some((c) => c.id === "ghost_assassin_mark");
-    const finalDrawn = hasMarkPower
-      ? drawCards(drawn.hand, drawn.drawPile, drawn.discardPile, 1)
-      : drawn;
-
-    set({
-      player: {
-        ...newPlayer,
-        energy: newPlayer.maxEnergy,
-        hand: finalDrawn.hand,
-        drawPile: finalDrawn.drawPile,
-        discardPile: finalDrawn.discardPile,
-      },
-      currentEnemy: newEnemy,
-      selectedCardIndex: null,
-      combatLog: [...newLog, "--- 새 턴 ---"],
-    });
-  },
-
-  selectRewardCard: (cardId) => {
-    const state = get();
-    if (state.phase !== "reward") return;
-
-    const newCard = { id: cardId, upgraded: false };
-    const newDeck = [...state.player.deck, newCard];
-    const map = generateActMap();
-
-    set({
-      phase: "map",
-      player: {
-        ...state.player,
-        deck: newDeck,
-      },
-      currentMap: map,
-      currentNodeId: null,
-      pendingRewardCards: [],
-      selectedCardIndex: null,
-    });
-  },
-
-  skipReward: () => {
-    const state = get();
-    if (state.phase !== "reward") return;
-
-    const map = generateActMap();
-
-    set({
-      phase: "map",
-      currentMap: map,
-      currentNodeId: null,
-      pendingRewardCards: [],
-      selectedCardIndex: null,
-    });
-  },
-
-  resetGame: () =>
-    set({
+export const useNetrunnerStore = create<NetrunnerStore>()(
+  persist(
+    (set, get) => ({
       phase: "title",
       mode: "story",
       player: INITIAL_PLAYER,
@@ -630,153 +257,657 @@ export const useNetrunnerStore = create<NetrunnerStore>((set, get) => ({
       combatLog: [],
       currentEvent: null,
       shopCards: [],
-    }),
+      highScore: 0,
 
-  enterMap: () => {
-    const map = generateActMap();
-    set({ phase: "map", currentMap: map, currentNodeId: null });
-  },
+      startGame: (playerClass, mode) => {
+        const classStat: Record<PlayerClass, { hp: number }> = {
+          ghost: { hp: 75 },
+          tank: { hp: 100 },
+          hacker: { hp: 70 },
+        };
 
-  resolveEvent: (choiceIndex) => {
-    const state = get();
-    const event = state.currentEvent;
-    if (!event) return;
+        const hp = classStat[playerClass].hp;
+        const starterDeck = buildStarterDeck(playerClass);
+        const shuffledDeck = shuffle(starterDeck);
+        const floor = 1;
+        const enemyId = getEnemyIdForFloor(floor);
+        const enemy = createEnemyInstance(enemyId);
+        const drawn = drawCards([], shuffledDeck, [], 5);
 
-    const choice = event.choices[choiceIndex];
-    if (!choice) return;
-
-    // Determine actual effects (probability check)
-    let effects = choice.effects;
-    if (choice.probability != null && choice.altEffects) {
-      effects = Math.random() < choice.probability ? choice.effects : choice.altEffects;
-    }
-
-    let newPlayer = { ...state.player };
-    let newDeck = [...state.player.deck];
-
-    for (const effect of effects) {
-      if (effect.type === "gain_gold") {
-        newPlayer = { ...newPlayer, gold: newPlayer.gold + effect.amount };
-      } else if (effect.type === "lose_gold") {
-        newPlayer = { ...newPlayer, gold: Math.max(0, newPlayer.gold - effect.amount) };
-      } else if (effect.type === "heal") {
-        newPlayer = { ...newPlayer, hp: Math.min(newPlayer.maxHp, newPlayer.hp + effect.amount) };
-      } else if (effect.type === "lose_hp") {
-        newPlayer = { ...newPlayer, hp: Math.max(1, newPlayer.hp - effect.amount) };
-      } else if (effect.type === "gain_max_hp") {
-        newPlayer = { ...newPlayer, maxHp: newPlayer.maxHp + effect.amount, hp: newPlayer.hp + effect.amount };
-      } else if (effect.type === "gain_card") {
-        const pool = getAllCardDefs().filter((c) =>
-          c.rarity === effect.rarity && (c.classes.includes(newPlayer.class) || c.classes.includes("neutral"))
-        );
-        if (pool.length > 0) {
-          const picked = pool[Math.floor(Math.random() * pool.length)];
-          newDeck = [...newDeck, { id: picked.id, upgraded: false }];
-        }
-      } else if (effect.type === "remove_card") {
-        // Remove a random non-starter card if possible, else first card
-        if (newDeck.length > 0) {
-          const idx = Math.floor(Math.random() * newDeck.length);
-          newDeck = newDeck.filter((_, i) => i !== idx);
-        }
-      } else if (effect.type === "upgrade_card") {
-        // Upgrade a random non-upgraded card
-        const upgradable = newDeck.findIndex((c) => !c.upgraded);
-        if (upgradable >= 0) {
-          newDeck = newDeck.map((c, i) => i === upgradable ? { ...c, upgraded: true } : c);
-        }
-      }
-      // apply_status: stored as pending, applied next combat — simplified: skip for now
-      // nothing: no-op
-    }
-
-    const map = generateActMap();
-    set({
-      phase: "map",
-      player: { ...newPlayer, deck: newDeck },
-      currentEvent: null,
-      currentMap: state.currentMap ?? map,
-      currentNodeId: state.currentNodeId,
-    });
-  },
-
-  buyCard: (cardId, price) => {
-    const state = get();
-    if (state.player.gold < price) return;
-    const newCard = { id: cardId, upgraded: false };
-    set({
-      player: {
-        ...state.player,
-        gold: state.player.gold - price,
-        deck: [...state.player.deck, newCard],
-      },
-      shopCards: state.shopCards.filter((id) => id !== cardId),
-    });
-  },
-
-  removeCardFromDeck: (cardIndex) => {
-    const state = get();
-    const REMOVE_COST = 75;
-    if (state.player.gold < REMOVE_COST) return;
-    set({
-      player: {
-        ...state.player,
-        gold: state.player.gold - REMOVE_COST,
-        deck: state.player.deck.filter((_, i) => i !== cardIndex),
-      },
-    });
-  },
-
-  selectNode: (nodeId: string) => {
-    const state = get();
-    if (!state.currentMap) return;
-
-    const node = state.currentMap.nodes.find((n) => n.id === nodeId);
-    if (!node) return;
-
-    // Mark visited
-    const updatedMap: ActMap = {
-      ...state.currentMap,
-      nodes: state.currentMap.nodes.map((n) =>
-        n.id === nodeId ? { ...n, visited: true } : n
-      ),
-    };
-
-    if (node.type === "combat" || node.type === "elite" || node.type === "boss") {
-      let enemyId: string;
-      if (node.type === "boss") enemyId = getBossIdForAct(state.run.act);
-      else if (node.type === "elite") enemyId = getEliteEnemyId();
-      else enemyId = getEnemyIdForFloor(state.run.floor);
-
-      const enemy = createEnemyInstance(enemyId);
-
-      const shuffledDeck = shuffle(state.player.deck);
-      const drawn = drawCards([], shuffledDeck, [], 5);
-
-      set({
-        phase: "combat",
-        currentMap: updatedMap,
-        currentNodeId: nodeId,
-        currentEnemy: enemy,
-        player: {
-          ...state.player,
+        const basePlayer: NetrunnerState["player"] = {
+          class: playerClass,
+          hp,
+          maxHp: hp,
+          gold: 99,
+          block: 0,
+          energy: 3,
+          maxEnergy: 3,
+          deck: starterDeck,
           hand: drawn.hand,
           drawPile: drawn.drawPile,
           discardPile: [],
-          block: 0,
-          energy: state.player.maxEnergy,
-        },
-        selectedCardIndex: null,
-        combatLog: [`⚔️ ${node.type === "boss" ? "보스" : node.type === "elite" ? "엘리트" : "전투"} 시작!`],
-      });
-    } else if (node.type === "event") {
-      set({ phase: "event", currentMap: updatedMap, currentNodeId: nodeId, currentEvent: getRandomEvent() });
-    } else if (node.type === "shop") {
-      const allCards = getAllCardDefs().filter((c) =>
-        c.classes.includes(state.player.class) || c.classes.includes("neutral")
-      );
-      const shopCards = shuffle(allCards).slice(0, 4).map((c) => c.id);
-      set({ phase: "shop", currentMap: updatedMap, currentNodeId: nodeId, shopCards });
+          relics: [],
+          statusEffects: [],
+        };
+
+        const relicResult = applyCombatStartRelics(basePlayer, enemy, { hand: drawn.hand, drawPile: drawn.drawPile, discardPile: [] });
+
+        set({
+          phase: "combat",
+          mode,
+          player: {
+            ...relicResult.player,
+            hand: relicResult.hand,
+            drawPile: relicResult.drawPile,
+            discardPile: relicResult.discardPile,
+          },
+          currentEnemy: relicResult.enemy,
+          run: { act: 1, floor, score: 0, enemiesDefeated: 0 },
+          pendingRewardCards: [],
+          selectedCardIndex: null,
+          combatLog: [`⚔️ ${enemy.definitionId === "ice_warden" ? "보스" : "전투"} 시작!`],
+        });
+      },
+
+      selectCard: (index) => set({ selectedCardIndex: index }),
+
+      playCard: (index) => {
+        const state = get();
+        if (state.phase !== "combat") return;
+        const { player, currentEnemy } = state;
+        if (!currentEnemy) return;
+
+        const card = player.hand[index];
+        if (!card) return;
+
+        const def = getCardDef(card.id);
+
+        // 에너지 체크
+        if (player.energy < def.cost) return;
+
+        // 잠금(lock) 상태: 패의 첫 번째 카드 사용 불가
+        const lockEffect = player.statusEffects.find((e) => e.id === "lock");
+        if (lockEffect && index === 0) return;
+
+        // 감전(shock) 상태: 블록 액션이 있는 카드 사용 불가
+        const hasShock = player.statusEffects.some((e) => e.id === "shock");
+        if (hasShock) {
+          const previewActions = def.effect(
+            { playerHp: 0, playerMaxHp: 0, playerBlock: 0, playerEnergy: 0, playerHandSize: 0, playerCardsPlayedThisTurn: 0, enemyHp: 0, enemyMaxHp: 0, enemyBlock: 0 },
+            card.upgraded
+          );
+          const hasBlockAction = previewActions.some(
+            (a) => a.type === "add_block" && (a as { target: string }).target === "player"
+          );
+          if (hasBlockAction) return;
+        }
+
+        const cardsPlayedThisTurn = state.combatLog.filter((l) => l.startsWith("▶")).length;
+
+        const ctx = {
+          playerHp: player.hp,
+          playerMaxHp: player.maxHp,
+          playerBlock: player.block,
+          playerEnergy: player.energy,
+          playerHandSize: player.hand.length,
+          playerCardsPlayedThisTurn: cardsPlayedThisTurn,
+          enemyHp: currentEnemy.hp,
+          enemyMaxHp: currentEnemy.maxHp,
+          enemyBlock: currentEnemy.block,
+        };
+
+        const actions = def.effect(ctx, card.upgraded);
+        let newPlayer = { ...player, energy: player.energy - def.cost };
+        let newEnemy = { ...currentEnemy };
+        const newLog = [...state.combatLog, `▶ ${def.name} 사용`];
+
+        // 액션 실행
+        for (const action of actions) {
+          if (action.type === "deal_damage") {
+            if (action.target === "enemy") {
+              let dmg = action.amount;
+              // 처형: 출혈 상태 적에게 2배
+              if (card.id === "ghost_execution" && newEnemy.statusEffects.some((e) => e.id === "bleed")) {
+                dmg *= 2;
+              }
+              // passive 유물: bonus_attack (공격 카드에만 적용)
+              if (def.type === "attack") {
+                for (const r of newPlayer.relics) {
+                  const rd = getRelicDef(r.id);
+                  if (rd?.effect.type === "bonus_attack") dmg += rd.effect.amount;
+                }
+              }
+              const absorbed = Math.min(newEnemy.block, dmg);
+              newEnemy = {
+                ...newEnemy,
+                block: newEnemy.block - absorbed,
+                hp: newEnemy.hp - (dmg - absorbed),
+              };
+              newLog.push(`💥 적에게 ${dmg - absorbed} 피해 (블록 ${absorbed} 흡수)`);
+            } else {
+              const absorbed = Math.min(newPlayer.block, action.amount);
+              newPlayer = {
+                ...newPlayer,
+                block: newPlayer.block - absorbed,
+                hp: newPlayer.hp - (action.amount - absorbed),
+              };
+            }
+          } else if (action.type === "add_block") {
+            if (action.target === "player") {
+              newPlayer = { ...newPlayer, block: newPlayer.block + action.amount };
+              newLog.push(`🛡️ 블록 +${action.amount}`);
+            } else {
+              newEnemy = { ...newEnemy, block: newEnemy.block + action.amount };
+            }
+          } else if (action.type === "apply_status") {
+            if (action.target === "enemy") {
+              newEnemy = { ...newEnemy, statusEffects: applyStatus(newEnemy.statusEffects, action.status, action.stacks) };
+              newLog.push(`⚠️ 적에게 ${action.status} ${action.stacks} 부여`);
+            } else {
+              newPlayer = { ...newPlayer, statusEffects: applyStatus(newPlayer.statusEffects, action.status, action.stacks) };
+            }
+          } else if (action.type === "draw_cards") {
+            const drawn = drawCards(newPlayer.hand, newPlayer.drawPile, newPlayer.discardPile, action.amount);
+            newPlayer = { ...newPlayer, hand: drawn.hand, drawPile: drawn.drawPile, discardPile: drawn.discardPile };
+          } else if (action.type === "draw_from_discard") {
+            if (newPlayer.discardPile.length > 0) {
+              const idx = Math.floor(Math.random() * newPlayer.discardPile.length);
+              const picked = newPlayer.discardPile[idx];
+              newPlayer = {
+                ...newPlayer,
+                hand: [...newPlayer.hand, picked],
+                discardPile: newPlayer.discardPile.filter((_, i) => i !== idx),
+              };
+            }
+          } else if (action.type === "gain_energy") {
+            newPlayer = { ...newPlayer, energy: newPlayer.energy + action.amount };
+          } else if (action.type === "heal") {
+            newPlayer = { ...newPlayer, hp: Math.min(newPlayer.maxHp, newPlayer.hp + action.amount) };
+            newLog.push(`💊 HP +${action.amount}`);
+          }
+        }
+
+        // 카드를 패에서 버린 더미로 이동 (파워는 소멸)
+        const newHand = newPlayer.hand.filter((_, i) => i !== index);
+        const newDiscard = def.type === "power" ? newPlayer.discardPile : [...newPlayer.discardPile, card];
+        newPlayer = { ...newPlayer, hand: newHand, discardPile: newDiscard };
+
+        // 적 HP 0 이하 → 전투 승리
+        if (newEnemy.hp <= 0) {
+          const enemyDef = getEnemyDef(newEnemy.definitionId);
+          const gold = enemyDef.goldMin + Math.floor(Math.random() * (enemyDef.goldMax - enemyDef.goldMin + 1));
+
+          // on_enemy_defeated 유물 적용
+          for (const r of newPlayer.relics) {
+            const rd = getRelicDef(r.id);
+            if (!rd || rd.trigger !== "on_enemy_defeated") continue;
+            if (rd.effect.type === "gain_gold") newPlayer = { ...newPlayer, gold: newPlayer.gold + rd.effect.amount };
+          }
+
+          // 엘리트 처치 시 언커먼 유물 획득
+          if (enemyDef.isElite) {
+            const relic = getRandomRelic("uncommon");
+            newPlayer = { ...newPlayer, relics: [...newPlayer.relics, { id: relic.id }] };
+          }
+
+          const pool = getAllCardDefs().filter((c) =>
+            c.classes.includes(newPlayer.class) || c.classes.includes("neutral")
+          );
+          const shuffledPool = shuffle(pool).slice(0, 3).map((c) => c.id);
+
+          const newFloor = state.run.floor + 1;
+          const isVictory = state.mode === "story" && newFloor > 3;
+
+          const scoreGain = enemyDef.isBoss ? 500 : (enemyDef.isElite ? 200 : 100);
+          const newScore = state.run.score + scoreGain;
+          const newHighScore = Math.max(state.highScore ?? 0, newScore);
+
+          set({
+            phase: isVictory ? "victory" : "reward",
+            player: { ...newPlayer, gold: newPlayer.gold + gold, block: 0 },
+            currentEnemy: newEnemy,
+            run: { ...state.run, floor: newFloor, score: newScore, enemiesDefeated: state.run.enemiesDefeated + 1 },
+            pendingRewardCards: shuffledPool,
+            selectedCardIndex: null,
+            combatLog: [...newLog, `🏆 ${enemyDef.name} 처치! 골드 +${gold}`],
+            highScore: newHighScore,
+          });
+          return;
+        }
+
+        set({
+          player: newPlayer,
+          currentEnemy: newEnemy,
+          selectedCardIndex: null,
+          combatLog: newLog,
+        });
+      },
+
+      endTurn: () => {
+        const state = get();
+        if (state.phase !== "combat") return;
+        const { player, currentEnemy } = state;
+        if (!currentEnemy) return;
+
+        const enemyDef = getEnemyDef(currentEnemy.definitionId);
+
+        let newPlayer = { ...player };
+        let newEnemy = { ...currentEnemy };
+        const newLog = [...state.combatLog, "--- 턴 종료 ---"];
+
+        // 1. 플레이어 상태이상 tick (출혈 피해)
+        const playerTick = tickStatusEffects(newPlayer.statusEffects);
+        newPlayer = {
+          ...newPlayer,
+          hp: newPlayer.hp - playerTick.damage,
+          statusEffects: playerTick.newEffects,
+        };
+        if (playerTick.damage > 0) newLog.push(`🔴 출혈로 ${playerTick.damage} 피해`);
+
+        // 2. 플레이어 블록 초기화
+        newPlayer = { ...newPlayer, block: 0 };
+
+        // 3. 적 행동 실행
+        const pattern = enemyDef.patterns[newEnemy.patternIndex % enemyDef.patterns.length];
+        for (const action of pattern.actions) {
+          if (action.type === "attack") {
+            const bonus = newEnemy.enraged ? (enemyDef.enrageAttackBonus ?? 0) : 0;
+            const overloadEffect = newPlayer.statusEffects.find((e) => e.id === "overload");
+            const overloadBonus = overloadEffect ? overloadEffect.stacks * 3 : 0;
+            const totalDmg = action.amount + bonus + overloadBonus;
+
+            if (overloadEffect) {
+              newPlayer = {
+                ...newPlayer,
+                statusEffects: newPlayer.statusEffects.filter((e) => e.id !== "overload"),
+              };
+              newLog.push(`💀 과부하 발동! 추가 ${overloadBonus} 피해`);
+            }
+
+            // dodge: 이번 공격 1회 회피
+            const dodgeEffect = newPlayer.statusEffects.find((e) => e.id === "dodge");
+            if (dodgeEffect) {
+              const newDodgeStacks = dodgeEffect.stacks - 1;
+              newPlayer = {
+                ...newPlayer,
+                statusEffects: newPlayer.statusEffects
+                  .filter((e) => e.id !== "dodge")
+                  .concat(newDodgeStacks > 0 ? [{ id: "dodge" as const, stacks: newDodgeStacks }] : []),
+              };
+              newLog.push(`✨ 회피 성공! (남은 dodge: ${newDodgeStacks})`);
+              continue;
+            }
+
+            const absorbed = Math.min(newPlayer.block, totalDmg);
+            newPlayer = {
+              ...newPlayer,
+              block: newPlayer.block - absorbed,
+              hp: newPlayer.hp - (totalDmg - absorbed),
+            };
+            newLog.push(`👊 적의 공격: ${totalDmg} 피해`);
+          } else if (action.type === "defend") {
+            newEnemy = { ...newEnemy, block: newEnemy.block + action.amount };
+            newLog.push(`🛡️ 적 블록 +${action.amount}`);
+          } else if (action.type === "apply_status") {
+            newPlayer = {
+              ...newPlayer,
+              statusEffects: applyStatus(newPlayer.statusEffects, action.status, action.stacks),
+            };
+            newLog.push(`⚡ 적이 ${action.status} ${action.stacks} 부여`);
+          }
+        }
+
+        // 4. 적 상태이상 tick
+        const enemyTick = tickStatusEffects(newEnemy.statusEffects);
+        newEnemy = {
+          ...newEnemy,
+          hp: newEnemy.hp - enemyTick.damage,
+          statusEffects: enemyTick.newEffects,
+        };
+        if (enemyTick.damage > 0) newLog.push(`🔴 적 출혈: ${enemyTick.damage} 피해`);
+
+        // 5. 적 블록 초기화
+        newEnemy = { ...newEnemy, block: 0 };
+
+        // 6. 패턴 인덱스 증가
+        const nextPatternIndex = (newEnemy.patternIndex + 1) % enemyDef.patterns.length;
+        const nextIntent = enemyDef.patterns[nextPatternIndex].intent;
+
+        // 7. 분노 체크
+        const enrageThreshold = enemyDef.enrageHpPercent ?? 0;
+        const shouldEnrage =
+          !newEnemy.enraged &&
+          enrageThreshold > 0 &&
+          newEnemy.hp / newEnemy.maxHp <= enrageThreshold;
+        if (shouldEnrage) {
+          newLog.push(`🔥 ${enemyDef.name} 분노!`);
+        }
+
+        newEnemy = {
+          ...newEnemy,
+          patternIndex: nextPatternIndex,
+          intent: nextIntent,
+          enraged: newEnemy.enraged || shouldEnrage,
+        };
+
+        // 8. 플레이어 HP 0 이하 → 게임오버
+        if (newPlayer.hp <= 0) {
+          set({
+            phase: "gameover",
+            player: { ...newPlayer, hp: 0 },
+            currentEnemy: newEnemy,
+            combatLog: [...newLog, "💀 사망..."],
+          });
+          return;
+        }
+
+        // 9. 적 HP 0 이하 (상태이상 틱 등으로) → 보상
+        if (newEnemy.hp <= 0) {
+          const gold = enemyDef.goldMin + Math.floor(Math.random() * (enemyDef.goldMax - enemyDef.goldMin + 1));
+
+          // on_enemy_defeated 유물 적용
+          for (const r of newPlayer.relics) {
+            const rd = getRelicDef(r.id);
+            if (!rd || rd.trigger !== "on_enemy_defeated") continue;
+            if (rd.effect.type === "gain_gold") newPlayer = { ...newPlayer, gold: newPlayer.gold + rd.effect.amount };
+          }
+
+          // 엘리트 처치 시 언커먼 유물 획득
+          if (enemyDef.isElite) {
+            const relic = getRandomRelic("uncommon");
+            newPlayer = { ...newPlayer, relics: [...newPlayer.relics, { id: relic.id }] };
+          }
+
+          const pool = getAllCardDefs().filter((c) =>
+            c.classes.includes(newPlayer.class) || c.classes.includes("neutral")
+          );
+          const rewardCards = shuffle(pool).slice(0, 3).map((c) => c.id);
+          const newFloor = state.run.floor + 1;
+          const isVictory = state.mode === "story" && newFloor > 3;
+
+          const scoreGain = enemyDef.isBoss ? 500 : (enemyDef.isElite ? 200 : 100);
+          const newScore = state.run.score + scoreGain;
+          const newHighScore = Math.max(state.highScore ?? 0, newScore);
+
+          set({
+            phase: isVictory ? "victory" : "reward",
+            player: { ...newPlayer, gold: newPlayer.gold + gold, block: 0 },
+            currentEnemy: newEnemy,
+            run: { ...state.run, floor: newFloor, score: newScore, enemiesDefeated: state.run.enemiesDefeated + 1 },
+            pendingRewardCards: rewardCards,
+            selectedCardIndex: null,
+            combatLog: [...newLog, `🏆 처치! 골드 +${gold}`],
+            highScore: newHighScore,
+          });
+          return;
+        }
+
+        // 10. 다음 턴 시작 — 패 전부 버리고 5장 드로우, 에너지 충전
+        const allDiscard = [...newPlayer.discardPile, ...newPlayer.hand];
+        const drawn = drawCards([], newPlayer.drawPile, allDiscard, 5);
+
+        // 암살자의 표식 파워: 추가 1장 드로우
+        const hasMarkPower = newPlayer.deck.some((c) => c.id === "ghost_assassin_mark");
+        const finalDrawn = hasMarkPower
+          ? drawCards(drawn.hand, drawn.drawPile, drawn.discardPile, 1)
+          : drawn;
+
+        // on_turn_start 유물 적용
+        for (const r of newPlayer.relics) {
+          const rd = getRelicDef(r.id);
+          if (!rd || rd.trigger !== "on_turn_start") continue;
+          if (rd.effect.type === "add_block") newPlayer = { ...newPlayer, block: newPlayer.block + rd.effect.amount };
+          if (rd.effect.type === "gain_energy") newPlayer = { ...newPlayer, energy: newPlayer.energy + rd.effect.amount };
+        }
+
+        set({
+          player: {
+            ...newPlayer,
+            energy: newPlayer.maxEnergy,
+            hand: finalDrawn.hand,
+            drawPile: finalDrawn.drawPile,
+            discardPile: finalDrawn.discardPile,
+          },
+          currentEnemy: newEnemy,
+          selectedCardIndex: null,
+          combatLog: [...newLog, "--- 새 턴 ---"],
+        });
+      },
+
+      selectRewardCard: (cardId) => {
+        const state = get();
+        if (state.phase !== "reward") return;
+
+        const newCard = { id: cardId, upgraded: false };
+        const newDeck = [...state.player.deck, newCard];
+        const map = generateActMap();
+
+        set({
+          phase: "map",
+          player: {
+            ...state.player,
+            deck: newDeck,
+          },
+          currentMap: map,
+          currentNodeId: null,
+          pendingRewardCards: [],
+          selectedCardIndex: null,
+        });
+      },
+
+      skipReward: () => {
+        const state = get();
+        if (state.phase !== "reward") return;
+
+        const map = generateActMap();
+
+        set({
+          phase: "map",
+          currentMap: map,
+          currentNodeId: null,
+          pendingRewardCards: [],
+          selectedCardIndex: null,
+        });
+      },
+
+      resetGame: () => {
+        const { highScore } = get();
+        set({
+          phase: "title",
+          mode: "story",
+          player: INITIAL_PLAYER,
+          currentEnemy: null,
+          currentMap: null,
+          currentNodeId: null,
+          run: INITIAL_RUN,
+          pendingRewardCards: [],
+          selectedCardIndex: null,
+          combatLog: [],
+          currentEvent: null,
+          shopCards: [],
+          highScore,
+        });
+      },
+
+      enterMap: () => {
+        const map = generateActMap();
+        set({ phase: "map", currentMap: map, currentNodeId: null });
+      },
+
+      resolveEvent: (choiceIndex) => {
+        const state = get();
+        const event = state.currentEvent;
+        if (!event) return;
+
+        const choice = event.choices[choiceIndex];
+        if (!choice) return;
+
+        // Determine actual effects (probability check)
+        let effects = choice.effects;
+        if (choice.probability != null && choice.altEffects) {
+          effects = Math.random() < choice.probability ? choice.effects : choice.altEffects;
+        }
+
+        let newPlayer = { ...state.player };
+        let newDeck = [...state.player.deck];
+
+        for (const effect of effects) {
+          if (effect.type === "gain_gold") {
+            newPlayer = { ...newPlayer, gold: newPlayer.gold + effect.amount };
+          } else if (effect.type === "lose_gold") {
+            newPlayer = { ...newPlayer, gold: Math.max(0, newPlayer.gold - effect.amount) };
+          } else if (effect.type === "heal") {
+            newPlayer = { ...newPlayer, hp: Math.min(newPlayer.maxHp, newPlayer.hp + effect.amount) };
+          } else if (effect.type === "lose_hp") {
+            newPlayer = { ...newPlayer, hp: Math.max(1, newPlayer.hp - effect.amount) };
+          } else if (effect.type === "gain_max_hp") {
+            newPlayer = { ...newPlayer, maxHp: newPlayer.maxHp + effect.amount, hp: newPlayer.hp + effect.amount };
+          } else if (effect.type === "gain_card") {
+            const pool = getAllCardDefs().filter((c) =>
+              c.rarity === effect.rarity && (c.classes.includes(newPlayer.class) || c.classes.includes("neutral"))
+            );
+            if (pool.length > 0) {
+              const picked = pool[Math.floor(Math.random() * pool.length)];
+              newDeck = [...newDeck, { id: picked.id, upgraded: false }];
+            }
+          } else if (effect.type === "remove_card") {
+            // Remove a random non-starter card if possible, else first card
+            if (newDeck.length > 0) {
+              const idx = Math.floor(Math.random() * newDeck.length);
+              newDeck = newDeck.filter((_, i) => i !== idx);
+            }
+          } else if (effect.type === "upgrade_card") {
+            // Upgrade a random non-upgraded card
+            const upgradable = newDeck.findIndex((c) => !c.upgraded);
+            if (upgradable >= 0) {
+              newDeck = newDeck.map((c, i) => i === upgradable ? { ...c, upgraded: true } : c);
+            }
+          }
+          // apply_status: stored as pending, applied next combat — simplified: skip for now
+          // nothing: no-op
+        }
+
+        const map = generateActMap();
+        set({
+          phase: "map",
+          player: { ...newPlayer, deck: newDeck },
+          currentEvent: null,
+          currentMap: state.currentMap ?? map,
+          currentNodeId: state.currentNodeId,
+        });
+      },
+
+      buyCard: (cardId, price) => {
+        const state = get();
+        if (state.player.gold < price) return;
+        const newCard = { id: cardId, upgraded: false };
+        set({
+          player: {
+            ...state.player,
+            gold: state.player.gold - price,
+            deck: [...state.player.deck, newCard],
+          },
+          shopCards: state.shopCards.filter((id) => id !== cardId),
+        });
+      },
+
+      removeCardFromDeck: (cardIndex) => {
+        const state = get();
+        const REMOVE_COST = 75;
+        if (state.player.gold < REMOVE_COST) return;
+        set({
+          player: {
+            ...state.player,
+            gold: state.player.gold - REMOVE_COST,
+            deck: state.player.deck.filter((_, i) => i !== cardIndex),
+          },
+        });
+      },
+
+      gainRelic: (relicId) => {
+        set((state) => ({
+          player: { ...state.player, relics: [...state.player.relics, { id: relicId }] },
+        }));
+      },
+
+      selectNode: (nodeId: string) => {
+        const state = get();
+        if (!state.currentMap) return;
+
+        const node = state.currentMap.nodes.find((n) => n.id === nodeId);
+        if (!node) return;
+
+        // Mark visited
+        const updatedMap: ActMap = {
+          ...state.currentMap,
+          nodes: state.currentMap.nodes.map((n) =>
+            n.id === nodeId ? { ...n, visited: true } : n
+          ),
+        };
+
+        if (node.type === "combat" || node.type === "elite" || node.type === "boss") {
+          let enemyId: string;
+          if (node.type === "boss") enemyId = getBossIdForAct(state.run.act);
+          else if (node.type === "elite") enemyId = getEliteEnemyId();
+          else enemyId = getEnemyIdForFloor(state.run.floor);
+
+          const enemy = createEnemyInstance(enemyId);
+
+          const shuffledDeck = shuffle(state.player.deck);
+          const drawn = drawCards([], shuffledDeck, [], 5);
+
+          const basePlayer: NetrunnerState["player"] = {
+            ...state.player,
+            hand: drawn.hand,
+            drawPile: drawn.drawPile,
+            discardPile: [],
+            block: 0,
+            energy: state.player.maxEnergy,
+          };
+
+          const relicResult = applyCombatStartRelics(basePlayer, enemy, { hand: drawn.hand, drawPile: drawn.drawPile, discardPile: [] });
+
+          set({
+            phase: "combat",
+            currentMap: updatedMap,
+            currentNodeId: nodeId,
+            currentEnemy: relicResult.enemy,
+            player: {
+              ...relicResult.player,
+              hand: relicResult.hand,
+              drawPile: relicResult.drawPile,
+              discardPile: relicResult.discardPile,
+            },
+            selectedCardIndex: null,
+            combatLog: [`⚔️ ${node.type === "boss" ? "보스" : node.type === "elite" ? "엘리트" : "전투"} 시작!`],
+          });
+        } else if (node.type === "event") {
+          set({ phase: "event", currentMap: updatedMap, currentNodeId: nodeId, currentEvent: getRandomEvent() });
+        } else if (node.type === "shop") {
+          const allCards = getAllCardDefs().filter((c) =>
+            c.classes.includes(state.player.class) || c.classes.includes("neutral")
+          );
+          const shopCards = shuffle(allCards).slice(0, 4).map((c) => c.id);
+          set({ phase: "shop", currentMap: updatedMap, currentNodeId: nodeId, shopCards });
+        }
+      },
+    }),
+    {
+      name: "netrunner-save",
+      partialize: (state) => ({
+        phase: state.phase,
+        mode: state.mode,
+        player: state.player,
+        currentEnemy: state.currentEnemy,
+        currentMap: state.currentMap,
+        currentNodeId: state.currentNodeId,
+        run: state.run,
+        pendingRewardCards: state.pendingRewardCards,
+        combatLog: state.combatLog,
+        shopCards: state.shopCards,
+        currentEvent: state.currentEvent,
+        highScore: state.highScore,
+      }),
     }
-  },
-}));
+  )
+);

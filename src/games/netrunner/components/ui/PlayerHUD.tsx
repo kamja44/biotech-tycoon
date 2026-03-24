@@ -1,4 +1,5 @@
 import StatusBadge from "./StatusBadge";
+import RelicDisplay from "./RelicDisplay";
 import type { NetrunnerState } from "../../store/gameStore";
 
 interface Props {
@@ -59,6 +60,9 @@ export default function PlayerHUD({ player }: Props) {
 
       {/* 상태이상 */}
       <StatusBadge effects={player.statusEffects} />
+
+      {/* 유물 */}
+      <RelicDisplay relics={player.relics} />
     </div>
   );
 }

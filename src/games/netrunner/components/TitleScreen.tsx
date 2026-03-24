@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import type { PlayerClass, GameMode } from "../store/gameStore";
+import { useNetrunnerStore } from "../store/gameStore";
 
 interface Props {
   onStart: (playerClass: PlayerClass, mode: GameMode) => void;
@@ -39,6 +40,7 @@ const CLASS_INFO = [
 export default function TitleScreen({ onStart }: Props) {
   const [selectedClass, setSelectedClass] = useState<PlayerClass>("ghost");
   const [selectedMode, setSelectedMode] = useState<GameMode>("story");
+  const highScore = useNetrunnerStore((s) => s.highScore);
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-6 text-white">
@@ -50,6 +52,9 @@ export default function TitleScreen({ onStart }: Props) {
         <p className="text-gray-400 mt-2 text-sm tracking-wider">
           CYBERPUNK 2087 — CARD ROGUELIKE
         </p>
+        {highScore > 0 && (
+          <p className="text-gray-500 text-sm mt-1">최고 기록: {highScore}점</p>
+        )}
       </div>
 
       {/* 모드 선택 */}
