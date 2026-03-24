@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useNetrunnerStore } from "../store/gameStore";
 import { getCardDef } from "../data/cards";
 import PlayerHUD from "./ui/PlayerHUD";
@@ -39,8 +40,13 @@ export default function CombatScreen() {
     <div className="min-h-screen bg-gray-950 text-white flex flex-col">
       {/* 상단 헤더 */}
       <div className="flex items-center justify-between px-6 py-3 bg-gray-900/80 border-b border-gray-800">
-        <div className="text-cyan-400 font-mono text-sm">
-          ACT {run.act} — 층 {run.floor} / 3
+        <div className="flex items-center gap-3">
+          <Link href="/" className="text-gray-500 hover:text-gray-300 text-xs transition-colors">
+            ← 홈
+          </Link>
+          <div className="text-cyan-400 font-mono text-sm">
+            ACT {run.act} — 층 {run.floor} / 3
+          </div>
         </div>
         <div className="flex gap-4 text-sm font-mono">
           {mode === "endless" && <span className="text-yellow-300">🏅 {run.score}점</span>}

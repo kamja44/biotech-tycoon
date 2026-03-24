@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Link from "next/link";
 import type { PlayerClass, GameMode } from "../store/gameStore";
 import { useNetrunnerStore } from "../store/gameStore";
 
@@ -44,6 +45,14 @@ export default function TitleScreen({ onStart }: Props) {
 
   return (
     <div className="min-h-screen bg-gray-950 flex flex-col items-center justify-center p-6 text-white">
+      {/* 홈으로 */}
+      <Link
+        href="/"
+        className="absolute top-4 left-4 text-gray-500 hover:text-gray-300 text-sm flex items-center gap-1 transition-colors"
+      >
+        ← 게임 목록
+      </Link>
+
       {/* 타이틀 */}
       <div className="text-center mb-10">
         <h1 className="text-6xl font-black tracking-widest text-cyan-400 drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">
