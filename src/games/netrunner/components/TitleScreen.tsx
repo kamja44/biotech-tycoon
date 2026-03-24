@@ -23,7 +23,7 @@ const CLASS_INFO = [
     hp: 100,
     style: "방어형",
     desc: "방어막 쌓고 반격. 높은 생존력.",
-    active: false,
+    active: true,
   },
   {
     id: "hacker" as PlayerClass,
@@ -32,7 +32,7 @@ const CLASS_INFO = [
     hp: 70,
     style: "디버프형",
     desc: "상태이상과 카드 조작으로 제압.",
-    active: false,
+    active: true,
   },
 ];
 

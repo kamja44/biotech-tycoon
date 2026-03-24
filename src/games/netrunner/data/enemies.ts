@@ -77,6 +77,66 @@ const enemyDefs: EnemyDefinition[] = [
     ],
   },
 
+  {
+    id: "spam_bot",
+    name: "스팸 봇",
+    emoji: "📧",
+    hpMin: 30,
+    hpMax: 38,
+    goldMin: 12,
+    goldMax: 18,
+    isBoss: false,
+    patterns: [
+      {
+        actions: [{ type: "apply_status", status: "bleed", stacks: 2 }],
+        intent: { type: "debuff" },
+      },
+      { actions: [{ type: "attack", amount: 6 }], intent: { type: "attack", value: 6 } },
+      {
+        actions: [{ type: "apply_status", status: "shock", stacks: 1 }],
+        intent: { type: "debuff" },
+      },
+      { actions: [{ type: "attack", amount: 8 }], intent: { type: "attack", value: 8 } },
+    ],
+  },
+  {
+    id: "armored_guard",
+    name: "장갑 경비",
+    emoji: "🛡️",
+    hpMin: 40,
+    hpMax: 50,
+    goldMin: 18,
+    goldMax: 24,
+    isBoss: false,
+    patterns: [
+      { actions: [{ type: "defend", amount: 12 }], intent: { type: "defend" } },
+      { actions: [{ type: "defend", amount: 12 }], intent: { type: "defend" } },
+      { actions: [{ type: "attack", amount: 20 }], intent: { type: "attack", value: 20 } },
+    ],
+  },
+  {
+    id: "shock_trooper",
+    name: "충격 부대원",
+    emoji: "⚡",
+    hpMin: 38,
+    hpMax: 48,
+    goldMin: 16,
+    goldMax: 22,
+    isBoss: false,
+    patterns: [
+      {
+        actions: [{ type: "apply_status", status: "shock", stacks: 2 }],
+        intent: { type: "debuff" },
+      },
+      { actions: [{ type: "attack", amount: 12 }], intent: { type: "attack", value: 12 } },
+      {
+        actions: [{ type: "apply_status", status: "overload", stacks: 1 }],
+        intent: { type: "debuff" },
+      },
+      { actions: [{ type: "attack", amount: 15 }], intent: { type: "attack", value: 15 } },
+    ],
+  },
+
   // ── Act 1 보스 ─────────────────────────────────────────
 
   {
@@ -145,6 +205,6 @@ export function createEnemyInstance(definitionId: string): EnemyInstance {
 
 export function getEnemyIdForFloor(floor: number): string {
   if (floor >= 3) return "ice_warden";
-  const pool = ["guard_drone", "corp_agent", "scout_bot"];
+  const pool = ["guard_drone", "corp_agent", "scout_bot", "spam_bot", "armored_guard", "shock_trooper"];
   return pool[Math.floor(Math.random() * pool.length)];
 }
