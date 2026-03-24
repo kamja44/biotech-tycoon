@@ -23,4 +23,15 @@ export const games: GameMeta[] = [
     players: "1인",
     genre: "전략 경영",
   },
+  {
+    slug: "netrunner",
+    title: "NETRUNNER",
+    description: "사이버펑크 세계의 카드 덱빌딩 로그라이크. 넷러너가 되어 메가코프를 무너뜨려라.",
+    tags: ["카드", "로그라이크", "전략"],
+    emoji: "🃏",
+    status: "coming-soon",
+    difficulty: "높음",
+    players: "1인",
+    genre: "카드 로그라이크",
+  },
 ];
