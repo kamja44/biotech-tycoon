@@ -35,11 +35,14 @@ export default function TowerPalette() {
               disabled={!canAfford && !isSelected}
             >
               <div className="flex items-center justify-between mb-0.5">
-                <span
-                  className="text-xs font-bold"
-                  style={{ color: def.color }}
-                >
-                  {def.name}
+                <span className="flex items-center gap-1">
+                  <span className="text-sm leading-none">{def.emoji}</span>
+                  <span
+                    className="text-xs font-bold"
+                    style={{ color: def.color }}
+                  >
+                    {def.name}
+                  </span>
                 </span>
                 <span className={`text-xs font-mono ${canAfford ? "text-warning" : "text-foreground/30"}`}>
                   {cost}

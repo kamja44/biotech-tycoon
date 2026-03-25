@@ -1,6 +1,6 @@
-import type { TowerInstance } from "../types/tower";
+import type { TowerInstance, TowerTypeId } from "../types/tower";
 import type { EnemyInstance } from "../types/enemy";
-import type { Projectile } from "../types/projectile";
+import type { Projectile, ProjectileVisualType } from "../types/projectile";
 import type { RunModifiers } from "../types/roguelike";
 import { TOWER_DEFS } from "../data/towers";
 import { ENEMY_DEFS } from "../data/enemies";
@@ -13,6 +13,20 @@ import {
 } from "./combat";
 
 let _projIdCounter = 0;
+
+function getTowerVisualType(defId: TowerTypeId): ProjectileVisualType {
+  switch (defId) {
+    case "sniper":   return "sniper";
+    case "area":     return "area";
+    case "slow":     return "slow";
+    case "chain":    return "chain";
+    case "poison":   return "poison";
+    case "laser":    return "laser";
+    case "emp":      return "emp";
+    case "overload": return "overload";
+    default:         return "basic";
+  }
+}
 
 export class TowerSystem {
   constructor(private readonly cellSize: number) {}
@@ -63,12 +77,15 @@ export class TowerSystem {
         targetEnemyId: target.id,
         x: towerX,
         y: towerY,
+        originX: towerX,
+        originY: towerY,
         speed: def.projectileSpeed,
         damage: finalDamage,
         damageType: def.damageType,
         special: def.special,
         isAlive: true,
         color: def.color,
+        visualType: getTowerVisualType(tower.defId),
       };
       projectiles.set(proj.id, proj);
     }

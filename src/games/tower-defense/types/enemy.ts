@@ -8,6 +8,7 @@ export type EnemyTrait = "armored" | "fast" | "flying" | "regenerating" | "boss"
 export interface EnemyDef {
   id: EnemyTypeId;
   name: string;         // Korean
+  emoji: string;        // display icon
   hp: number;
   speed: number;        // pixels per second
   reward: number;       // gold on kill

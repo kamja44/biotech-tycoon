@@ -36,6 +36,7 @@ export interface TowerDef {
   id: TowerTypeId;
   name: string;          // Korean name
   description: string;   // Korean description
+  emoji: string;         // display icon
   cost: number;
   tags: TowerTag[];
   range: number;         // pixels

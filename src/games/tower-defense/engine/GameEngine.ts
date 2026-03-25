@@ -284,7 +284,8 @@ export class GameEngine {
       this.projectiles,
       this._hoveredCell,
       this._selectedTowerDefId,
-      this.runMods
+      this.runMods,
+      this._gameTimeMs
     );
   }
 }

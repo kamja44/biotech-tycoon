@@ -1,4 +1,4 @@
-import type { TowerInstance } from "../types/tower";
+import type { TowerInstance, TowerDef } from "../types/tower";
 import type { EnemyInstance } from "../types/enemy";
 import type { Projectile } from "../types/projectile";
 import type { MapDef } from "../types/map";
@@ -16,7 +16,8 @@ export function renderFrame(
   projectiles: Map<string, Projectile>,
   hoveredCell: { gridX: number; gridY: number } | null,
   selectedTowerDefId: string | null,
-  runMods: RunModifiers
+  runMods: RunModifiers,
+  gameTime = 0
 ): void {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -32,7 +33,7 @@ export function renderFrame(
 
   // Tower range on hover (if no new tower selected)
   for (const tower of towers.values()) {
-    drawTower(ctx, tower, mapDef);
+    drawTower(ctx, tower, mapDef, gameTime);
   }
 
   // Show range for hovered existing tower
@@ -48,7 +49,7 @@ export function renderFrame(
   }
 
   for (const proj of projectiles.values()) {
-    if (proj.isAlive) drawProjectile(ctx, proj);
+    if (proj.isAlive) drawProjectile(ctx, proj, gameTime);
   }
 
   drawHoveredCell(ctx, mapDef, hoveredCell, selectedTowerDefId, towers);
@@ -158,13 +159,24 @@ function drawBlockedCells(ctx: CanvasRenderingContext2D, mapDef: MapDef): void {
 function drawTower(
   ctx: CanvasRenderingContext2D,
   tower: TowerInstance,
-  mapDef: MapDef
+  mapDef: MapDef,
+  gameTime: number
 ): void {
   const def = TOWER_DEFS[tower.defId];
   const { cellSize } = mapDef;
   const cx = tower.gridX * cellSize + cellSize / 2;
   const cy = tower.gridY * cellSize + cellSize / 2;
   const r = cellSize * 0.38;
+
+  // Aura effects (drawn behind tower body)
+  const sp = def.special;
+  if (sp?.type === "shield") {
+    drawShieldAura(ctx, cx, cy, def, gameTime);
+  } else if (sp?.type === "firewall") {
+    drawFirewallAura(ctx, cx, cy, def, gameTime);
+  } else if (sp?.type === "pulse") {
+    drawPulseAura(ctx, cx, cy, def, gameTime);
+  }
 
   // Tower base
   ctx.fillStyle = "#111827";
@@ -192,12 +204,11 @@ function drawTower(
     ctx.fill();
   }
 
-  // Tower icon (first letter of name)
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `bold ${Math.floor(cellSize * 0.28)}px monospace`;
+  // Tower icon (emoji)
+  ctx.font = `${Math.floor(cellSize * 0.46)}px serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(def.name[0], cx, cy);
+  ctx.fillText(def.emoji, cx, cy + 1);
 }
 
 function drawRangeCircle(
@@ -311,6 +322,13 @@ function drawEnemy(
     ctx.stroke();
   }
 
+  // Enemy emoji icon
+  const emojiSize = Math.max(10, Math.floor(r * 1.6));
+  ctx.font = `${emojiSize}px serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(def.emoji, enemy.x, enemy.y + 1);
+
   // HP bar
   const barW = r * 2.2;
   const barH = 4;
@@ -324,17 +342,26 @@ function drawEnemy(
   ctx.fillRect(barX, barY, barW * hpRatio, barH);
 }
 
-function drawProjectile(ctx: CanvasRenderingContext2D, proj: Projectile): void {
-  ctx.fillStyle = proj.color;
-  ctx.beginPath();
-  ctx.arc(proj.x, proj.y, 4, 0, Math.PI * 2);
-  ctx.fill();
+function drawProjectile(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile,
+  gameTime: number
+): void {
+  const dx = proj.x - proj.originX;
+  const dy = proj.y - proj.originY;
+  const travelAngle = Math.atan2(dy, dx);
 
-  // Glow effect
-  ctx.fillStyle = proj.color + "66";
-  ctx.beginPath();
-  ctx.arc(proj.x, proj.y, 7, 0, Math.PI * 2);
-  ctx.fill();
+  switch (proj.visualType) {
+    case "sniper":   drawProjSniper(ctx, proj);                 break;
+    case "laser":    drawProjLaser(ctx, proj);                  break;
+    case "area":     drawProjArea(ctx, proj, gameTime);         break;
+    case "slow":     drawProjSlow(ctx, proj, travelAngle);      break;
+    case "chain":    drawProjChain(ctx, proj, gameTime);        break;
+    case "poison":   drawProjPoison(ctx, proj, gameTime);       break;
+    case "emp":      drawProjEmp(ctx, proj, gameTime);          break;
+    case "overload": drawProjOverload(ctx, proj, gameTime);     break;
+    default:         drawProjBasic(ctx, proj, travelAngle);     break;
+  }
 }
 
 function drawHoveredCell(
@@ -394,4 +421,416 @@ function findTowerAt(
     if (tower.gridX === gridX && tower.gridY === gridY) return tower;
   }
   return null;
+}
+
+// ─── Tower Aura Effects ───────────────────────────────────────────────────────
+
+function drawShieldAura(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  def: TowerDef,
+  gameTime: number
+): void {
+  const pulse = Math.sin((gameTime / 2000) * Math.PI * 2);
+  const ringR = def.range + pulse * 4;
+  // Faint dome fill
+  ctx.fillStyle = "rgba(59,130,246,0.06)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, def.range, 0, Math.PI * 2);
+  ctx.fill();
+  // Pulsing ring
+  const alpha = (0.25 + (pulse + 1) * 0.15).toFixed(2);
+  ctx.strokeStyle = `rgba(59,130,246,${alpha})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawFirewallAura(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  def: TowerDef,
+  gameTime: number
+): void {
+  const phases = [0, 0.33, 0.66];
+  for (const phase of phases) {
+    const flicker = Math.sin((gameTime / 120 + phase) * Math.PI * 2);
+    const r = def.range + flicker * 3;
+    const alpha = (0.18 + Math.abs(flicker) * 0.14).toFixed(2);
+    const hue = phase < 0.5 ? "239,68,68" : "249,115,22";
+    ctx.strokeStyle = `rgba(${hue},${alpha})`;
+    ctx.lineWidth = 6 + Math.abs(flicker) * 3;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(239,68,68,0.05)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, def.range, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawPulseAura(
+  ctx: CanvasRenderingContext2D,
+  cx: number, cy: number,
+  def: TowerDef,
+  gameTime: number
+): void {
+  const sp = def.special as { type: "pulse"; interval: number; aoeRadius: number };
+  const phase = (gameTime % sp.interval) / sp.interval;
+  const ringR = phase * sp.aoeRadius;
+  const alpha = ((1 - phase) * 0.65).toFixed(2);
+  ctx.strokeStyle = `rgba(167,139,250,${alpha})`;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
+  ctx.stroke();
+  // Static boundary hint
+  ctx.strokeStyle = "rgba(167,139,250,0.1)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  ctx.arc(cx, cy, sp.aoeRadius, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+// ─── Projectile Draw Functions ────────────────────────────────────────────────
+
+// BASIC — elongated capsule aligned to travel direction
+function drawProjBasic(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile,
+  angle: number
+): void {
+  ctx.save();
+  ctx.translate(proj.x, proj.y);
+  ctx.rotate(angle);
+  // Trail
+  ctx.fillStyle = proj.color + "44";
+  ctx.beginPath();
+  ctx.ellipse(-7, 0, 8, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Bullet body
+  ctx.fillStyle = proj.color;
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 5, 2.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Bright tip
+  ctx.fillStyle = "#ffffffaa";
+  ctx.beginPath();
+  ctx.arc(3.5, -0.5, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// SNIPER — thin bright beam from origin to tip
+function drawProjSniper(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile
+): void {
+  ctx.save();
+  // Outer glow
+  ctx.strokeStyle = proj.color + "55";
+  ctx.lineWidth = 4;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(proj.originX, proj.originY);
+  ctx.lineTo(proj.x, proj.y);
+  ctx.stroke();
+  // Core beam
+  ctx.strokeStyle = "#ffffffcc";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(proj.originX, proj.originY);
+  ctx.lineTo(proj.x, proj.y);
+  ctx.stroke();
+  // Tip
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(proj.x, proj.y, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineCap = "butt";
+  ctx.restore();
+}
+
+// AREA — dark bomb with fuse spark and wobble
+function drawProjArea(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile,
+  gameTime: number
+): void {
+  const wobble = Math.sin(gameTime / 120) * 0.04;
+  ctx.save();
+  ctx.translate(proj.x, proj.y);
+  ctx.rotate(wobble);
+  // Shadow
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.beginPath();
+  ctx.ellipse(2, 3, 6, 3.5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Bomb body
+  ctx.fillStyle = "#1c1917";
+  ctx.beginPath();
+  ctx.arc(0, 0, 6, 0, Math.PI * 2);
+  ctx.fill();
+  // Shine
+  ctx.fillStyle = "rgba(255,255,255,0.14)";
+  ctx.beginPath();
+  ctx.arc(-1.5, -1.5, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  // Fuse
+  ctx.strokeStyle = "#92400e";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -6);
+  ctx.quadraticCurveTo(5, -10, 3, -14);
+  ctx.stroke();
+  // Spark
+  const sparkColor = Math.sin(gameTime / 80) > 0 ? "#f97316" : "#fbbf24";
+  ctx.fillStyle = sparkColor + "aa";
+  ctx.beginPath();
+  ctx.arc(3, -14, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = sparkColor;
+  ctx.beginPath();
+  ctx.arc(3, -14, 2.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// SLOW — ice diamond/shard aligned to travel direction
+function drawProjSlow(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile,
+  angle: number
+): void {
+  ctx.save();
+  ctx.translate(proj.x, proj.y);
+  ctx.rotate(angle);
+  // Glow
+  ctx.fillStyle = proj.color + "44";
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 10, 10, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Diamond
+  ctx.fillStyle = proj.color;
+  ctx.beginPath();
+  ctx.moveTo(8, 0);
+  ctx.lineTo(0, 4);
+  ctx.lineTo(-7, 0);
+  ctx.lineTo(0, -4);
+  ctx.closePath();
+  ctx.fill();
+  // Inner highlight
+  ctx.fillStyle = "rgba(255,255,255,0.45)";
+  ctx.beginPath();
+  ctx.moveTo(4, 0);
+  ctx.lineTo(0, 2);
+  ctx.lineTo(-2, 0);
+  ctx.lineTo(0, -2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// CHAIN — electric orb with 4 rotating zigzag spikes
+function drawProjChain(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile,
+  gameTime: number
+): void {
+  const rot = (gameTime / 1000) * Math.PI;
+  ctx.save();
+  ctx.translate(proj.x, proj.y);
+  // Glow
+  ctx.fillStyle = proj.color + "44";
+  ctx.beginPath();
+  ctx.arc(0, 0, 10, 0, Math.PI * 2);
+  ctx.fill();
+  // Zigzag spikes
+  ctx.strokeStyle = "#fde047";
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < 4; i++) {
+    const a = rot + (i * Math.PI) / 2;
+    ctx.save();
+    ctx.rotate(a);
+    ctx.beginPath();
+    ctx.moveTo(4, 0);
+    ctx.lineTo(7, -2);
+    ctx.lineTo(9, 1);
+    ctx.lineTo(12, -1);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // Orb core
+  ctx.fillStyle = proj.color;
+  ctx.beginPath();
+  ctx.arc(0, 0, 4, 0, Math.PI * 2);
+  ctx.fill();
+  // Bright center
+  ctx.fillStyle = "#fef9c3";
+  ctx.beginPath();
+  ctx.arc(-0.5, -0.5, 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// POISON — wobbly organic blob
+function drawProjPoison(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile,
+  gameTime: number
+): void {
+  const t = gameTime / 300;
+  ctx.save();
+  ctx.translate(proj.x, proj.y);
+  // Outer glow
+  ctx.fillStyle = proj.color + "44";
+  ctx.beginPath();
+  ctx.arc(0, 0, 9, 0, Math.PI * 2);
+  ctx.fill();
+  // Wobbly blob using polyline approximation
+  ctx.fillStyle = proj.color;
+  ctx.beginPath();
+  const pts = 8;
+  for (let i = 0; i <= pts; i++) {
+    const ang = (i / pts) * Math.PI * 2;
+    const wobble = 1 + 0.22 * Math.sin(ang * 3 + t);
+    const r = 5 * wobble;
+    const px = Math.cos(ang) * r;
+    const py = Math.sin(ang) * r;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  // Highlight
+  ctx.fillStyle = "rgba(255,255,255,0.35)";
+  ctx.beginPath();
+  ctx.arc(-1.5, -1.5, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// LASER — thick multi-layer beam from origin to tip
+function drawProjLaser(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile
+): void {
+  ctx.save();
+  ctx.lineCap = "round";
+  // Outermost glow
+  ctx.strokeStyle = proj.color + "33";
+  ctx.lineWidth = 12;
+  ctx.beginPath();
+  ctx.moveTo(proj.originX, proj.originY);
+  ctx.lineTo(proj.x, proj.y);
+  ctx.stroke();
+  // Mid glow
+  ctx.strokeStyle = proj.color + "77";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(proj.originX, proj.originY);
+  ctx.lineTo(proj.x, proj.y);
+  ctx.stroke();
+  // Core beam
+  ctx.strokeStyle = proj.color;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(proj.originX, proj.originY);
+  ctx.lineTo(proj.x, proj.y);
+  ctx.stroke();
+  // White hot center
+  ctx.strokeStyle = "#ffffffaa";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(proj.originX, proj.originY);
+  ctx.lineTo(proj.x, proj.y);
+  ctx.stroke();
+  // Tip flash
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(proj.x, proj.y, 3.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = proj.color + "88";
+  ctx.beginPath();
+  ctx.arc(proj.x, proj.y, 7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineCap = "butt";
+  ctx.restore();
+}
+
+// EMP — yellow orb with 2 alternating dashed expanding rings
+function drawProjEmp(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile,
+  gameTime: number
+): void {
+  const period = 600;
+  const p1 = (gameTime % period) / period;
+  const p2 = ((gameTime + period / 2) % period) / period;
+  ctx.save();
+  ctx.translate(proj.x, proj.y);
+  ctx.setLineDash([3, 3]);
+  ctx.lineWidth = 1.5;
+  // Ring 1
+  ctx.strokeStyle = `rgba(251,191,36,${((1 - p1) * 0.7).toFixed(2)})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, p1 * 14, 0, Math.PI * 2);
+  ctx.stroke();
+  // Ring 2
+  ctx.strokeStyle = `rgba(251,191,36,${((1 - p2) * 0.7).toFixed(2)})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, p2 * 14, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // Orb core
+  ctx.fillStyle = proj.color;
+  ctx.beginPath();
+  ctx.arc(0, 0, 5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#fef9c3";
+  ctx.beginPath();
+  ctx.arc(-0.5, -0.5, 2, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// OVERLOAD — large pulsing magenta orb with 3 rotating arc segments
+function drawProjOverload(
+  ctx: CanvasRenderingContext2D,
+  proj: Projectile,
+  gameTime: number
+): void {
+  const pulse = Math.sin(gameTime / 250) * 0.5 + 0.5;
+  const orbR = 6 + pulse * 3;
+  const rot = (gameTime / 1000) * (Math.PI / 2);
+  ctx.save();
+  ctx.translate(proj.x, proj.y);
+  // Outer glow
+  ctx.fillStyle = proj.color + "44";
+  ctx.beginPath();
+  ctx.arc(0, 0, orbR + 8, 0, Math.PI * 2);
+  ctx.fill();
+  // 3 rotating arc segments (120° apart)
+  ctx.strokeStyle = proj.color;
+  ctx.lineWidth = 2;
+  for (let i = 0; i < 3; i++) {
+    const arcStart = rot + (i * Math.PI * 2) / 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, orbR + 5, arcStart, arcStart + Math.PI / 3);
+    ctx.stroke();
+  }
+  // Core radial gradient
+  const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, orbR);
+  grad.addColorStop(0, "#fdf4ff");
+  grad.addColorStop(0.5, proj.color);
+  grad.addColorStop(1, proj.color + "aa");
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, orbR, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
 }

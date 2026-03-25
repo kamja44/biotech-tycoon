@@ -5,6 +5,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   grunt: {
     id: "grunt",
     name: "강습 용병",
+    emoji: "🪖",
     hp: 60,
     speed: 80,
     reward: 8,
@@ -19,6 +20,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   runner: {
     id: "runner",
     name: "스피드 해커",
+    emoji: "💨",
     hp: 35,
     speed: 150,
     reward: 10,
@@ -33,6 +35,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   armored: {
     id: "armored",
     name: "중장갑 솔저",
+    emoji: "🤖",
     hp: 180,
     speed: 55,
     reward: 20,
@@ -47,6 +50,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   drone: {
     id: "drone",
     name: "공중 드론",
+    emoji: "🚁",
     hp: 45,
     speed: 110,
     reward: 12,
@@ -61,6 +65,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   stealth: {
     id: "stealth",
     name: "스텔스 요원",
+    emoji: "👤",
     hp: 80,
     speed: 100,
     reward: 18,
@@ -75,6 +80,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   splitter: {
     id: "splitter",
     name: "분열 유닛",
+    emoji: "🔮",
     hp: 120,
     speed: 70,
     reward: 15,
@@ -89,6 +95,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   regenerator: {
     id: "regenerator",
     name: "재생 유닛",
+    emoji: "💉",
     hp: 200,
     speed: 60,
     reward: 25,
@@ -103,6 +110,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   boss_ice: {
     id: "boss_ice",
     name: "아이스 코어 보스",
+    emoji: "❄️",
     hp: 1200,
     speed: 40,
     reward: 100,
@@ -117,6 +125,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   boss_nexus: {
     id: "boss_nexus",
     name: "넥서스 AI",
+    emoji: "🧠",
     hp: 2000,
     speed: 50,
     reward: 150,
@@ -131,6 +140,7 @@ export const ENEMY_DEFS: Record<EnemyTypeId, EnemyDef> = {
   boss_megacorp: {
     id: "boss_megacorp",
     name: "메가코프 타이탄",
+    emoji: "👾",
     hp: 4000,
     speed: 30,
     reward: 300,

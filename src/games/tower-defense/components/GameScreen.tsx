@@ -43,7 +43,7 @@ export default function GameScreen() {
     onWaveComplete: useCallback(() => {
       setWaveInProgress(false);
       const wave = useTDStore.getState().currentWave + 1;
-      const isLastWave = mode === "story" && wave > storyWaves.length;
+      const isLastWave = mode === "story" && wave >= storyWaves.length;
 
       if (isLastWave) {
         // Victory!
