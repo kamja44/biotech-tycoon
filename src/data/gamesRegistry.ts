@@ -34,4 +34,15 @@ export const games: GameMeta[] = [
     players: "1인",
     genre: "카드 로그라이크",
   },
+  {
+    slug: "tower-defense",
+    title: "사이버 디펜스",
+    description: "넷러너 세계관의 사이버펑크 타워 디펜스. 12종의 포탑으로 메가코프의 침공을 막아라. 웨이브를 클리어하고 로그라이크 강화를 선택하라.",
+    tags: ["타워디펜스", "전략", "로그라이크"],
+    emoji: "🏰",
+    status: "active",
+    difficulty: "보통",
+    players: "1인",
+    genre: "타워 디펜스",
+  },
 ];
