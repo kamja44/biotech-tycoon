@@ -45,4 +45,16 @@ export const games: GameMeta[] = [
     players: "1인",
     genre: "타워 디펜스",
   },
+  {
+    slug: "russian-roulette",
+    title: "러시안 룰렛",
+    description:
+      "최대 8명의 온라인 멀티플레이어 러시안 룰렛. 돌림판으로 총알 칸 수를 결정하고, 운명의 방아쇠를 당겨라.",
+    tags: ["멀티플레이어", "운빨", "심리전"],
+    emoji: "🔫",
+    status: "active",
+    difficulty: "운빨",
+    players: "1-8인",
+    genre: "멀티플레이어",
+  },
 ];
