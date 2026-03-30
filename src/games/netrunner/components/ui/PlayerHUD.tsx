@@ -11,7 +11,7 @@ export default function PlayerHUD({ player }: Props) {
   const hpColor = hpPct > 50 ? "bg-green-500" : hpPct > 25 ? "bg-yellow-500" : "bg-red-500";
 
   return (
-    <div className="bg-gray-900/80 border border-gray-700 rounded-xl p-4 space-y-3 min-w-[220px]">
+    <div className="bg-gray-900/80 border border-gray-700 rounded-xl p-4 space-y-3 min-w-0 w-full md:min-w-[220px] md:w-auto">
       <div className="flex items-center gap-2">
         <span className="text-2xl">🗡️</span>
         <div>

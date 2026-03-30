@@ -25,29 +25,30 @@ export default function HUD({
   const mode = useTDStore((s) => s.mode);
 
   return (
-    <div className="absolute top-0 left-0 right-0 flex items-center gap-3 px-4 py-2 bg-background/90 border-b border-card-border backdrop-blur-sm z-20">
+    <div className="absolute top-0 left-0 right-0 flex items-center gap-2 px-2 sm:px-4 py-2 bg-background/90 border-b border-card-border backdrop-blur-sm z-20">
       {/* Lives */}
-      <div className="flex items-center gap-1.5 text-sm font-mono">
+      <div className="flex items-center gap-1 text-sm font-mono">
         <span className="text-danger">❤️</span>
         <span className={`font-bold ${lives <= 5 ? "text-danger" : "text-foreground"}`}>{lives}</span>
       </div>
 
       {/* Credits */}
-      <div className="flex items-center gap-1.5 text-sm font-mono">
+      <div className="flex items-center gap-1 text-sm font-mono">
         <span>💰</span>
         <span className="font-bold text-warning">{credits}</span>
       </div>
 
       {/* Wave */}
-      <div className="flex items-center gap-1.5 text-sm font-mono">
-        <span className="text-foreground/40">웨이브</span>
+      <div className="flex items-center gap-1 text-sm font-mono">
+        <span className="hidden sm:inline text-foreground/40">웨이브</span>
+        <span className="sm:hidden text-foreground/40">W</span>
         <span className="font-bold text-primary">
           {currentWave}/{mode === "endless" ? "∞" : totalWaves}
         </span>
       </div>
 
       {/* Score */}
-      <div className="flex items-center gap-1.5 text-sm font-mono ml-1">
+      <div className="hidden sm:flex items-center gap-1.5 text-sm font-mono ml-1">
         <span className="text-foreground/40">점수</span>
         <span className="font-bold text-accent">{score.toLocaleString()}</span>
       </div>
@@ -60,7 +61,7 @@ export default function HUD({
           <button
             key={s}
             onClick={() => onSpeedChange(s)}
-            className={`px-2 py-1 text-xs font-mono rounded border transition-colors ${
+            className={`px-1.5 sm:px-2 py-1 text-xs font-mono rounded border transition-colors ${
               currentSpeed === s
                 ? "bg-primary text-background border-primary"
                 : "bg-card-bg text-foreground/60 border-card-border hover:border-primary/50"
@@ -74,7 +75,7 @@ export default function HUD({
       {/* Pause */}
       <button
         onClick={onPause}
-        className="px-3 py-1 text-xs font-mono rounded border border-card-border bg-card-bg text-foreground/60 hover:text-foreground hover:border-foreground/30 transition-colors"
+        className="px-2 sm:px-3 py-1 text-xs font-mono rounded border border-card-border bg-card-bg text-foreground/60 hover:text-foreground hover:border-foreground/30 transition-colors"
       >
         ⏸
       </button>
@@ -83,14 +84,15 @@ export default function HUD({
       {!waveInProgress && (
         <button
           onClick={onStartWave}
-          className="px-4 py-1.5 text-sm font-bold rounded-lg bg-primary hover:bg-primary-dark text-background transition-colors"
+          className="px-2 sm:px-4 py-1.5 text-xs sm:text-sm font-bold rounded-lg bg-primary hover:bg-primary-dark text-background transition-colors"
         >
-          웨이브 시작 ▶
+          <span className="hidden sm:inline">웨이브 시작 </span>▶
         </button>
       )}
       {waveInProgress && (
-        <div className="px-4 py-1.5 text-sm font-mono text-foreground/40 border border-card-border rounded-lg">
-          진행 중...
+        <div className="px-2 sm:px-4 py-1.5 text-xs sm:text-sm font-mono text-foreground/40 border border-card-border rounded-lg">
+          <span className="hidden sm:inline">진행 중</span>
+          <span className="sm:hidden">...</span>
         </div>
       )}
     </div>

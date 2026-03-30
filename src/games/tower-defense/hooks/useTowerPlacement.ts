@@ -116,6 +116,80 @@ export function useTowerPlacement(
     engineRef.current?.setHoveredCell(null, null);
   }, [engineRef]);
 
+  const handleTouchStart = useCallback(
+    (e: TouchEvent) => {
+      e.preventDefault();
+      const canvas = canvasRef.current;
+      const engine = engineRef.current;
+      if (!canvas || !engine || !mapDef) return;
+
+      const touch = e.changedTouches[0];
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const px = (touch.clientX - rect.left) * scaleX;
+      const py = (touch.clientY - rect.top) * scaleY;
+
+      const gridX = Math.floor(px / mapDef.cellSize);
+      const gridY = Math.floor(py / mapDef.cellSize);
+
+      if (gridX < 0 || gridX >= mapDef.gridWidth || gridY < 0 || gridY >= mapDef.gridHeight) return;
+
+      if (selectedTowerType) {
+        if (isPathCell(mapDef, gridX, gridY)) return;
+        if (mapDef.blockedCells.some((c) => c.x === gridX && c.y === gridY)) return;
+        if (placedTowers.some((t) => t.gridX === gridX && t.gridY === gridY)) return;
+
+        const def = TOWER_DEFS[selectedTowerType];
+        const cost = Math.round(def.cost * runModifiers.towerCostMult);
+        if (credits < cost) return;
+
+        const saved: PlacedTowerSave = {
+          id: `tower_${++_towerIdCounter}`,
+          defId: selectedTowerType,
+          gridX,
+          gridY,
+          level: 1,
+        };
+
+        spendCredits(cost);
+        placeTower(saved);
+        engine.addTower(saved);
+      }
+    },
+    [canvasRef, engineRef, mapDef, selectedTowerType, placedTowers, credits, runModifiers, placeTower, spendCredits]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: TouchEvent) => {
+      e.preventDefault();
+      const canvas = canvasRef.current;
+      const engine = engineRef.current;
+      if (!canvas || !engine || !mapDef) return;
+
+      const touch = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const px = (touch.clientX - rect.left) * scaleX;
+      const py = (touch.clientY - rect.top) * scaleY;
+
+      const gridX = Math.floor(px / mapDef.cellSize);
+      const gridY = Math.floor(py / mapDef.cellSize);
+
+      if (gridX >= 0 && gridX < mapDef.gridWidth && gridY >= 0 && gridY < mapDef.gridHeight) {
+        engine.setHoveredCell(gridX, gridY);
+      } else {
+        engine.setHoveredCell(null, null);
+      }
+    },
+    [canvasRef, engineRef, mapDef]
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    engineRef.current?.setHoveredCell(null, null);
+  }, [engineRef]);
+
   const handleRightClick = useCallback(
     (e: MouseEvent) => {
       e.preventDefault();
@@ -136,12 +210,20 @@ export function useTowerPlacement(
     canvas.addEventListener("mousemove", handleMouseMove);
     canvas.addEventListener("mouseleave", handleMouseLeave);
     canvas.addEventListener("contextmenu", handleRightClick);
+    canvas.addEventListener("touchstart", handleTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", handleTouchMove, { passive: false });
+    canvas.addEventListener("touchend", handleTouchEnd);
+    canvas.addEventListener("touchcancel", handleTouchEnd);
 
     return () => {
       canvas.removeEventListener("click", handleClick);
       canvas.removeEventListener("mousemove", handleMouseMove);
       canvas.removeEventListener("mouseleave", handleMouseLeave);
       canvas.removeEventListener("contextmenu", handleRightClick);
+      canvas.removeEventListener("touchstart", handleTouchStart);
+      canvas.removeEventListener("touchmove", handleTouchMove);
+      canvas.removeEventListener("touchend", handleTouchEnd);
+      canvas.removeEventListener("touchcancel", handleTouchEnd);
     };
-  }, [canvasRef, handleClick, handleMouseMove, handleMouseLeave, handleRightClick]);
+  }, [canvasRef, handleClick, handleMouseMove, handleMouseLeave, handleRightClick, handleTouchStart, handleTouchMove, handleTouchEnd]);
 }

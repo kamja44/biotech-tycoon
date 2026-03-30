@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState, useCallback, useEffect } from "react";
 import { useTDStore } from "../store/gameStore";
+import { useIsMobile } from "../hooks/useIsMobile";
 import { getMapDef, MAP_DEFS } from "../data/maps";
 import { getStoryWaves, buildEndlessWave } from "../data/waves";
 import { getUpgradeChoices } from "../data/upgrades";
@@ -15,6 +16,8 @@ export default function GameScreen() {
   const [waveInProgress, setWaveInProgress] = useState(false);
   const [speed, setSpeed] = useState<1 | 2 | 3>(1);
   const [isPaused, setIsPaused] = useState(false);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const isMobile = useIsMobile();
 
   const selectedMapId = useTDStore((s) => s.selectedMapId);
   const mode = useTDStore((s) => s.mode);
@@ -134,16 +137,40 @@ export default function GameScreen() {
       {/* Game area */}
       <div className="flex flex-1 overflow-hidden mt-[49px]">
         {/* Tower palette */}
-        <TowerPalette />
+        <TowerPalette
+          isMobile={isMobile}
+          isDrawerOpen={isDrawerOpen}
+          onClose={() => setIsDrawerOpen(false)}
+        />
 
         {/* Canvas */}
-        <div className="flex-1 overflow-auto ml-[180px] flex items-start justify-start">
+        <div className={`flex-1 overflow-auto flex items-start ${isMobile ? "justify-center" : "ml-[180px] justify-start"}`}>
           <canvas
             ref={canvasRef}
+            className={isMobile ? "w-full h-auto" : ""}
             style={{ display: "block", imageRendering: "pixelated" }}
           />
         </div>
       </div>
+
+      {/* Mobile: FAB + backdrop */}
+      {isMobile && (
+        <>
+          {isDrawerOpen && (
+            <div
+              className="fixed inset-0 bg-black/40 z-30"
+              onClick={() => setIsDrawerOpen(false)}
+            />
+          )}
+          <button
+            onClick={() => setIsDrawerOpen(true)}
+            className="fixed bottom-4 right-4 z-50 w-14 h-14 rounded-full bg-primary text-background text-2xl shadow-lg flex items-center justify-center"
+            aria-label="포탑 선택"
+          >
+            🏰
+          </button>
+        </>
+      )}
 
       {/* Pause overlay */}
       {isPaused && (

@@ -55,12 +55,14 @@ export default function CombatScreen() {
       </div>
 
       {/* 전투 영역 */}
-      <div className="flex flex-1 items-center justify-between px-10 py-6 gap-6">
+      <div className="flex flex-1 flex-col md:flex-row md:items-center md:justify-between md:px-10 py-6 gap-6 px-4">
         {/* 플레이어 HUD */}
-        <PlayerHUD player={player} />
+        <div className="w-full md:w-auto">
+          <PlayerHUD player={player} />
+        </div>
 
         {/* 중앙 — 적 + 로그 */}
-        <div className="flex flex-col items-center gap-4 flex-1">
+        <div className="flex flex-col items-center gap-4 w-full md:flex-1">
           {enemy && <EnemyComponent enemy={enemy} />}
           <div className="mt-4 text-gray-400 text-sm bg-gray-900/60 rounded-lg px-4 py-2 max-w-xs text-center truncate">
             {lastLog}
@@ -68,7 +70,7 @@ export default function CombatScreen() {
         </div>
 
         {/* 선택된 카드 플레이 버튼 */}
-        <div className="w-44 flex flex-col items-center gap-3">
+        <div className="w-full md:w-44 flex flex-col items-center gap-3">
           {selectedCardIndex !== null && (
             <button
               onClick={() => playCard(selectedCardIndex)}
@@ -87,7 +89,7 @@ export default function CombatScreen() {
       </div>
 
       {/* 패 영역 */}
-      <div className="flex justify-center items-end gap-2 pb-6 px-4 pt-2 bg-gray-900/40 border-t border-gray-800 min-h-[160px]">
+      <div className="flex flex-wrap justify-center gap-2 pb-6 px-4 pt-4 bg-gray-900/40 border-t border-gray-800 min-h-[160px]">
         {player.hand.map((card, index) => (
           <CardComponent
             key={`${card.id}-${index}`}

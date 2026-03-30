@@ -55,7 +55,7 @@ export default function TitleScreen({ onStart }: Props) {
 
       {/* 타이틀 */}
       <div className="text-center mb-10">
-        <h1 className="text-6xl font-black tracking-widest text-cyan-400 drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">
+        <h1 className="text-4xl md:text-6xl font-black tracking-widest text-cyan-400 drop-shadow-[0_0_20px_rgba(34,211,238,0.5)]">
           NETRUNNER
         </h1>
         <p className="text-gray-400 mt-2 text-sm tracking-wider">
@@ -83,14 +83,14 @@ export default function TitleScreen({ onStart }: Props) {
       </div>
 
       {/* 클래스 선택 */}
-      <div className="grid grid-cols-3 gap-4 mb-10">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-10 w-full max-w-lg">
         {CLASS_INFO.map((cls) => (
           <button
             key={cls.id}
             onClick={() => cls.active && setSelectedClass(cls.id)}
             disabled={!cls.active}
             className={`
-              relative w-44 rounded-2xl border-2 p-5 text-left transition-all
+              relative w-full rounded-2xl border-2 p-5 text-left transition-all
               ${!cls.active ? "opacity-40 cursor-not-allowed border-gray-700 bg-gray-900/50" :
                 selectedClass === cls.id
                   ? "border-cyan-400 bg-cyan-950/60 shadow-lg shadow-cyan-500/20 scale-105"
